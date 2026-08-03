@@ -1,5 +1,7 @@
 # PIWISViewer
 
+![PIWISViewer report](hero.png)
+
 Standalone viewer for Porsche PIWIS 3 "Vehicle Analysis Log" (VAL / FAP)
 archives.
 
@@ -21,6 +23,10 @@ piwis_val_viewer.py [input.zip|input.xml] [--out FILE] [--no-open]
 With no arguments, a file dialog asks for the log zipfile (a bare
 `FAP_*.xml` also works). The HTML report is written to the system temp
 directory (`piwis_val_*.html`) and opened in the browser.
+
+> **Note:** PIWIS may write more than one .zip file for a session.
+> When several are present, use the one whose name begins with `FAP_`
+> if possible -- that archive contains the vehicle analysis log.
 
 | Option      | Effect                                             |
 |-------------|----------------------------------------------------|
