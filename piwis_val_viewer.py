@@ -3327,14 +3327,32 @@ function onFilterInput() {
   debounce = setTimeout(applyFilter, 150);
 }
 function applyFilter() {
-  var q = document.getElementById('filterbox').value.trim().toLowerCase();
+  var raw = document.getElementById('filterbox').value.trim();
+  // terms separated by a literal uppercase OR are alternatives:
+  // "Overspeed OR Nmax" matches rows containing either word
+  var terms = [];
+  if (raw) {
+    var split = raw.split(/\s+OR\s+/);
+    for (var t = 0; t < split.length; t++) {
+      var term = split[t].trim().toLowerCase();
+      if (term) terms.push(term);
+    }
+  }
+  var q = terms.length > 0;
   // Filterable units: value rows and fault banners. A fault banner's
   // textContent includes its nested tables, so it stays visible whenever
   // any of its detail rows match.
   var units = document.querySelectorAll('tr.frow, div.faultitem');
   var shown = 0;
   for (var i = 0; i < units.length; i++) {
-    var hit = !q || units[i].textContent.toLowerCase().indexOf(q) >= 0;
+    var hit = true;
+    if (q) {
+      hit = false;
+      var text = units[i].textContent.toLowerCase();
+      for (var k = 0; k < terms.length; k++) {
+        if (text.indexOf(terms[k]) >= 0) { hit = true; break; }
+      }
+    }
     units[i].style.display = hit ? '' : 'none';
     if (hit) shown++;
   }
@@ -3354,7 +3372,15 @@ function applyFilter() {
   document.getElementById('filtercount').textContent =
     q ? (shown + ' matching items') : '';
 }
+function clearFilter() {
+  var b = document.getElementById('filterbox');
+  if (b.value) {
+    b.value = '';
+    applyFilter();
+  }
+}
 function setAll(open) {
+  clearFilter();
   var secs = document.querySelectorAll('details.ecu');
   for (var i = 0; i < secs.length; i++) secs[i].open = open;
 }
@@ -3737,19 +3763,22 @@ def build_html(root, source_desc):
     parts.append("<style>%s</style>" % CSS)
     parts.append("<script>%s</script>" % JS)
     parts.append("</head><body>")
-    nav = ('<a href="#overview">Overview</a>'
-           + ('<a href="#faults">Faults</a>' if nfaults else '')
-           + '<a href="#coding">Coding</a>'
-             '<a href="#ecus">Control units</a>'
-             '<a href="#" title="filter for Nmax over-rev ranges '
-             '(supported vehicles only)" '
-             'onclick="return presetFilter(\'Nmax\')">Overrevs</a>')
+    nav = ('<a href="#overview" onclick="clearFilter()">Overview</a>'
+           + ('<a href="#faults" onclick="clearFilter()">Faults</a>'
+              if nfaults else '')
+           + '<a href="#coding" onclick="clearFilter()">Coding</a>'
+             '<a href="#ecus" onclick="clearFilter()">Control units</a>'
+             '<a href="#" title="filter for Overspeed/Nmax over-rev '
+             'records (supported vehicles only)" '
+             'onclick="return presetFilter(\'Overspeed OR Nmax\')">'
+             'Overrevs</a>')
     parts.append(
         ('<div class="topbar"><h1>%s</h1>'
          '<span class="vin">%s &middot; %s</span>'
          '<div class="navlinks">%s</div>'
          '<input id="filterbox" type="search" '
          'placeholder="Filter rows (label, value, fault code)..." '
+         'title="combine alternatives with OR, e.g. Overspeed OR Nmax" '
          'oninput="onFilterInput()">'
          '<span id="filtercount"></span>'
          '<button onclick="setAll(true)">Expand all</button>'

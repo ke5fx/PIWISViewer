@@ -58,9 +58,11 @@ via `pythonw` so no console window appears.
   measured values, coding, and fault memory including the nested
   extended fault memory tables; sections with faults start expanded
 - **Filter box** in the top bar: type to show only matching rows across
-  all tables (matching sections auto-expand). The **Overrevs** shortcut
-  pre-fills the filter with `Nmax` to jump straight to the engine's
-  over-rev range records (supported vehicles only).
+  all tables (matching sections auto-expand). Alternatives can be
+  combined with an uppercase `OR` (e.g. `Overspeed OR Nmax`). The
+  **Overrevs** shortcut pre-fills the filter with `Overspeed OR Nmax`
+  to jump straight to the engine's over-rev records (supported
+  vehicles only); the other top-bar shortcuts clear the filter.
 - Values in `km` or `bar` also show the imperial equivalent:
   `49976 km (31054 mi)`, `2.0 bar (29.0 psi)`
 

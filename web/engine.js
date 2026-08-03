@@ -639,19 +639,25 @@
         parts.push('<style>' + D.CSS + '</style>');
         parts.push('<script>' + D.JS + '<\/script>');
         parts.push('</head><body>');
-        var nav = '<a href="#overview">Overview</a>'
-            + (nfaults ? '<a href="#faults">Faults</a>' : '')
-            + '<a href="#coding">Coding</a>'
-            + '<a href="#ecus">Control units</a>'
-            + '<a href="#" title="filter for Nmax over-rev ranges '
-            + '(supported vehicles only)" '
-            + 'onclick="return presetFilter(\'Nmax\')">Overrevs</a>';
+        var nav = '<a href="#overview" onclick="clearFilter()">'
+            + 'Overview</a>'
+            + (nfaults
+               ? '<a href="#faults" onclick="clearFilter()">Faults</a>'
+               : '')
+            + '<a href="#coding" onclick="clearFilter()">Coding</a>'
+            + '<a href="#ecus" onclick="clearFilter()">Control units</a>'
+            + '<a href="#" title="filter for Overspeed/Nmax over-rev '
+            + 'records (supported vehicles only)" '
+            + 'onclick="return presetFilter(\'Overspeed OR Nmax\')">'
+            + 'Overrevs</a>';
         parts.push('<div class="topbar"><h1>' + title + '</h1>'
             + '<span class="vin">' + vin + ' &middot; ' + created
             + '</span>'
             + '<div class="navlinks">' + nav + '</div>'
             + '<input id="filterbox" type="search" '
             + 'placeholder="Filter rows (label, value, fault code)..." '
+            + 'title="combine alternatives with OR, e.g. Overspeed OR '
+            + 'Nmax" '
             + 'oninput="onFilterInput()">'
             + '<span id="filtercount"></span>'
             + '<button onclick="setAll(true)">Expand all</button>'
