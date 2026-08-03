@@ -12,7 +12,12 @@ default web browser -- with the German labels translated to English.
 
 ## Usage
 
-Grab `PIWIS_VAL_Viewer.exe` from the
+**Easiest:** open the web version at
+**<https://ke5fx.github.io/PIWISViewer/>** and drop your log zipfile on
+the page. Everything runs client-side in your browser -- nothing is
+uploaded, and the VIN and diagnostic data never leave your machine.
+
+Or grab `PIWIS_VAL_Viewer.exe` from the
 [Releases](https://github.com/ke5fx/PIWISViewer/releases) page (no
 Python required), or run the script directly with Python 3:
 

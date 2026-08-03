@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PIWISViewer - Porsche vehicle analysis log viewer</title>
+<style>
+:root { --ink:#1a1a1a; --dim:#666; --line:#d8d8d8; --paper:#f5f6f7;
+        --card:#ffffff; --accent:#005a9c; --fault:#b00020; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--paper); color:var(--ink);
+       font:15px/1.5 "Segoe UI",Arial,Helvetica,sans-serif; }
+a { color:var(--accent); }
+.wrap { max-width:860px; margin:0 auto; padding:28px 16px; }
+h1 { font-size:26px; margin:0 0 4px 0; }
+.sub { color:var(--dim); margin:0 0 22px 0; }
+.card { background:var(--card); border:1px solid var(--line);
+        border-radius:10px; padding:20px 22px; margin:14px 0; }
+#drop { border:2px dashed var(--line); border-radius:10px;
+        padding:44px 20px; text-align:center; cursor:pointer;
+        background:var(--card); transition:border-color .15s,
+        background .15s; }
+#drop.hover { border-color:var(--accent); background:#eef4fa; }
+#drop b { color:var(--accent); }
+#file { display:none; }
+.privacy { font-size:13.5px; color:var(--dim); }
+.privacy b { color:var(--ink); }
+#status { margin:12px 0; font-size:14px; color:var(--dim);
+          min-height:1.3em; }
+#status.err { color:var(--fault); font-weight:600; }
+#result { display:none; }
+#result button, #drop button {
+        padding:8px 16px; border:1px solid var(--line);
+        border-radius:6px; background:#fafafa; cursor:pointer;
+        font-size:14px; margin-right:10px; }
+#result button:hover { background:#f0f0f0; }
+#preview { width:100%; height:70vh; border:1px solid var(--line);
+           border-radius:10px; background:#fff; margin-top:14px; }
+.footer { color:var(--dim); font-size:12.5px; text-align:center;
+          margin:26px 0 8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PIWISViewer</h1>
+  <p class="sub">Porsche PIWIS 3 vehicle analysis log (VAL / FAP) viewer
+  &mdash; renders the log as a readable, filterable, English-translated
+  HTML report.</p>
+
+  <div id="drop">
+    <p style="font-size:17px; margin:0 0 6px 0"><b>Drop your log
+    zipfile here</b> or click to choose a file</p>
+    <p style="color:#666; margin:0">Accepts the <code>FAP_*.zip</code>
+    written by PIWIS (a bare <code>FAP_*.xml</code> also works). If
+    PIWIS wrote several .zip files, use the one whose name begins with
+    <code>FAP_</code>.</p>
+    <input id="file" type="file" accept=".zip,.xml">
+  </div>
+
+  <p id="status"></p>
+
+  <div id="result" class="card">
+    <button id="openbtn">Open report in new tab</button>
+    <button id="dlbtn">Download report</button>
+    <iframe id="preview" title="report preview"></iframe>
+  </div>
+
+  <div class="card privacy">
+    <b>Privacy:</b> your log is processed entirely inside your browser
+    by JavaScript on this page. Nothing is uploaded &mdash; the VIN and
+    diagnostic data never leave your machine. The page works offline
+    once loaded.
+  </div>
+
+  <p class="footer">
+    <a href="https://github.com/ke5fx/PIWISViewer">PIWISViewer on
+    GitHub</a> &mdash; public domain. A Windows .exe version is
+    available under
+    <a href="https://github.com/ke5fx/PIWISViewer/releases">Releases</a>.
+  </p>
+</div>
+
+<script>
+/*__PDATA__*/
+</script>
+<script>
+/*__ENGINE__*/
+</script>
+<script>
+'use strict';
+(function () {
+    PIWIS.init(PDATA);
+
+    var statusEl = document.getElementById('status');
+    var resultEl = document.getElementById('result');
+    var previewEl = document.getElementById('preview');
+    var dropEl = document.getElementById('drop');
+    var fileEl = document.getElementById('file');
+    var blobUrl = null;
+    var reportName = 'piwis_val_report.html';
+
+    function setStatus(msg, isErr) {
+        statusEl.textContent = msg;
+        statusEl.className = isErr ? 'err' : '';
+    }
+
+    // ---------- minimal zip reader (stored + deflate entries) ----------
+
+    function findEocd(dv) {
+        var len = dv.byteLength;
+        var max = Math.min(len - 22, 65557);
+        for (var back = 0; back <= max; back++) {
+            var p = len - 22 - back;
+            if (p < 0) break;
+            if (dv.getUint32(p, true) === 0x06054b50) return p;
+        }
+        return -1;
+    }
+
+    function listEntries(buf) {
+        var dv = new DataView(buf);
+        var eocd = findEocd(dv);
+        if (eocd < 0) throw new Error('Not a zip file (no directory found)');
+        var count = dv.getUint16(eocd + 10, true);
+        var cdOff = dv.getUint32(eocd + 16, true);
+        var dec = new TextDecoder('utf-8');
+        var entries = [];
+        var p = cdOff;
+        for (var i = 0; i < count; i++) {
+            if (dv.getUint32(p, true) !== 0x02014b50) {
+                throw new Error('Corrupt zip central directory');
+            }
+            var method = dv.getUint16(p + 10, true);
+            var compSize = dv.getUint32(p + 20, true);
+            var uncompSize = dv.getUint32(p + 24, true);
+            var nameLen = dv.getUint16(p + 28, true);
+            var extraLen = dv.getUint16(p + 30, true);
+            var commentLen = dv.getUint16(p + 32, true);
+            var localOff = dv.getUint32(p + 42, true);
+            var name = dec.decode(new Uint8Array(buf, p + 46, nameLen));
+            entries.push({ name: name, method: method,
+                           compSize: compSize, uncompSize: uncompSize,
+                           localOff: localOff });
+            p += 46 + nameLen + extraLen + commentLen;
+        }
+        return entries;
+    }
+
+    function extractEntry(buf, entry) {
+        var dv = new DataView(buf);
+        var p = entry.localOff;
+        if (dv.getUint32(p, true) !== 0x04034b50) {
+            return Promise.reject(new Error('Corrupt zip local header'));
+        }
+        var nameLen = dv.getUint16(p + 26, true);
+        var extraLen = dv.getUint16(p + 28, true);
+        var start = p + 30 + nameLen + extraLen;
+        var slice = buf.slice(start, start + entry.compSize);
+        if (entry.method === 0) {
+            return Promise.resolve(slice);
+        }
+        if (entry.method !== 8) {
+            return Promise.reject(new Error(
+                'Unsupported zip compression method ' + entry.method));
+        }
+        var ds = new DecompressionStream('deflate-raw');
+        var stream = new Blob([slice]).stream().pipeThrough(ds);
+        return new Response(stream).arrayBuffer();
+    }
+
+    // ---------- log loading (mirrors load_log in the Python) ----------
+
+    function baseName(p) {
+        return p.split('/').pop().split('\\').pop();
+    }
+
+    function pickXmlEntry(entries) {
+        var xml = entries.filter(function (e) {
+            return e.name.toLowerCase().slice(-4) === '.xml';
+        });
+        if (!xml.length) {
+            throw new Error('No .xml member found in the zipfile');
+        }
+        var fap = xml.filter(function (e) {
+            return baseName(e.name).toUpperCase().slice(0, 4) === 'FAP_';
+        });
+        if (fap.length) return fap[0];
+        xml.sort(function (a, b) { return b.uncompSize - a.uncompSize; });
+        return xml[0];
+    }
+
+    function domToTree(el) {
+        var node = { tag: el.tagName, attrib: {}, text: null,
+                     children: [] };
+        for (var a = 0; a < el.attributes.length; a++) {
+            node.attrib[el.attributes[a].name] = el.attributes[a].value;
+        }
+        var textParts = [];
+        var seenElem = false;
+        for (var c = el.firstChild; c; c = c.nextSibling) {
+            if (c.nodeType === 1) {
+                seenElem = true;
+                node.children.push(domToTree(c));
+            } else if ((c.nodeType === 3 || c.nodeType === 4)
+                       && !seenElem) {
+                textParts.push(c.nodeValue);
+            }
+        }
+        node.text = textParts.length ? textParts.join('') : null;
+        return node;
+    }
+
+    function parseXmlBytes(buf, sourceDesc) {
+        var text = new TextDecoder('utf-8').decode(buf);
+        var doc = new DOMParser().parseFromString(text, 'text/xml');
+        if (doc.getElementsByTagName('parsererror').length) {
+            throw new Error('Could not parse the XML log');
+        }
+        var root = doc.documentElement;
+        if (root.tagName !== 'RESULTS') {
+            throw new Error('Unexpected XML root element <' + root.tagName
+                + '>; expected <RESULTS> (PIWIS vehicle analysis log)');
+        }
+        return { tree: domToTree(root), sourceDesc: sourceDesc };
+    }
+
+    function processFile(file) {
+        setStatus('Reading ' + file.name + ' ...', false);
+        resultEl.style.display = 'none';
+        var lower = file.name.toLowerCase();
+        file.arrayBuffer().then(function (buf) {
+            if (lower.slice(-4) === '.xml') {
+                return parseXmlBytes(buf, file.name);
+            }
+            var entries = listEntries(buf);
+            var entry = pickXmlEntry(entries);
+            return extractEntry(buf, entry).then(function (xbuf) {
+                return parseXmlBytes(xbuf,
+                    file.name + ' :: ' + entry.name);
+            });
+        }).then(function (r) {
+            setStatus('Rendering report ...', false);
+            // let the status paint before the heavy work
+            return new Promise(function (resolve) {
+                setTimeout(function () { resolve(r); }, 20);
+            });
+        }).then(function (r) {
+            var html = PIWIS.toAscii(PIWIS.render(r.tree, r.sourceDesc));
+            if (blobUrl) URL.revokeObjectURL(blobUrl);
+            blobUrl = URL.createObjectURL(
+                new Blob([html], { type: 'text/html' }));
+            reportName = baseName(file.name)
+                .replace(/\.(zip|xml)$/i, '') + '_report.html';
+            previewEl.src = blobUrl;
+            resultEl.style.display = 'block';
+            setStatus('Done. The report is shown below.', false);
+        }).catch(function (err) {
+            setStatus('Error: ' + err.message, true);
+        });
+    }
+
+    document.getElementById('openbtn').addEventListener('click',
+        function () { if (blobUrl) window.open(blobUrl, '_blank'); });
+    document.getElementById('dlbtn').addEventListener('click',
+        function () {
+            if (!blobUrl) return;
+            var a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = reportName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+
+    dropEl.addEventListener('click', function () { fileEl.click(); });
+    fileEl.addEventListener('change', function () {
+        if (fileEl.files.length) processFile(fileEl.files[0]);
+    });
+    dropEl.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dropEl.classList.add('hover');
+    });
+    dropEl.addEventListener('dragleave', function () {
+        dropEl.classList.remove('hover');
+    });
+    dropEl.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dropEl.classList.remove('hover');
+        if (e.dataTransfer.files.length) {
+            processFile(e.dataTransfer.files[0]);
+        }
+    });
+})();
+</script>
+</body>
+</html>

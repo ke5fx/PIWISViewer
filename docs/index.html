@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PIWISViewer - Porsche vehicle analysis log viewer</title>
+<style>
+:root { --ink:#1a1a1a; --dim:#666; --line:#d8d8d8; --paper:#f5f6f7;
+        --card:#ffffff; --accent:#005a9c; --fault:#b00020; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--paper); color:var(--ink);
+       font:15px/1.5 "Segoe UI",Arial,Helvetica,sans-serif; }
+a { color:var(--accent); }
+.wrap { max-width:860px; margin:0 auto; padding:28px 16px; }
+h1 { font-size:26px; margin:0 0 4px 0; }
+.sub { color:var(--dim); margin:0 0 22px 0; }
+.card { background:var(--card); border:1px solid var(--line);
+        border-radius:10px; padding:20px 22px; margin:14px 0; }
+#drop { border:2px dashed var(--line); border-radius:10px;
+        padding:44px 20px; text-align:center; cursor:pointer;
+        background:var(--card); transition:border-color .15s,
+        background .15s; }
+#drop.hover { border-color:var(--accent); background:#eef4fa; }
+#drop b { color:var(--accent); }
+#file { display:none; }
+.privacy { font-size:13.5px; color:var(--dim); }
+.privacy b { color:var(--ink); }
+#status { margin:12px 0; font-size:14px; color:var(--dim);
+          min-height:1.3em; }
+#status.err { color:var(--fault); font-weight:600; }
+#result { display:none; }
+#result button, #drop button {
+        padding:8px 16px; border:1px solid var(--line);
+        border-radius:6px; background:#fafafa; cursor:pointer;
+        font-size:14px; margin-right:10px; }
+#result button:hover { background:#f0f0f0; }
+#preview { width:100%; height:70vh; border:1px solid var(--line);
+           border-radius:10px; background:#fff; margin-top:14px; }
+.footer { color:var(--dim); font-size:12.5px; text-align:center;
+          margin:26px 0 8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PIWISViewer</h1>
+  <p class="sub">Porsche PIWIS 3 vehicle analysis log (VAL / FAP) viewer
+  &mdash; renders the log as a readable, filterable, English-translated
+  HTML report.</p>
+
+  <div id="drop">
+    <p style="font-size:17px; margin:0 0 6px 0"><b>Drop your log
+    zipfile here</b> or click to choose a file</p>
+    <p style="color:#666; margin:0">Accepts the <code>FAP_*.zip</code>
+    written by PIWIS (a bare <code>FAP_*.xml</code> also works). If
+    PIWIS wrote several .zip files, use the one whose name begins with
+    <code>FAP_</code>.</p>
+    <input id="file" type="file" accept=".zip,.xml">
+  </div>
+
+  <p id="status"></p>
+
+  <div id="result" class="card">
+    <button id="openbtn">Open report in new tab</button>
+    <button id="dlbtn">Download report</button>
+    <iframe id="preview" title="report preview"></iframe>
+  </div>
+
+  <div class="card privacy">
+    <b>Privacy:</b> your log is processed entirely inside your browser
+    by JavaScript on this page. Nothing is uploaded &mdash; the VIN and
+    diagnostic data never leave your machine. The page works offline
+    once loaded.
+  </div>
+
+  <p class="footer">
+    <a href="https://github.com/ke5fx/PIWISViewer">PIWISViewer on
+    GitHub</a> &mdash; public domain. A Windows .exe version is
+    available under
+    <a href="https://github.com/ke5fx/PIWISViewer/releases">Releases</a>.
+  </p>
+</div>
+
+<script>
+var PDATA = {"APP_NAME": "PIWIS VAL Viewer (web)", "CSS": "\n:root { --ink:#1a1a1a; --dim:#666; --line:#d8d8d8; --paper:#f5f6f7;\n        --card:#ffffff; --accent:#005a9c; --fault:#b00020; --faultbg:#fdecea;\n        --okbg:#eef5ee; }\n* { box-sizing:border-box; }\nbody { margin:0; background:var(--paper); color:var(--ink);\n       font:14px/1.45 \"Segoe UI\",Arial,Helvetica,sans-serif; }\na { color:var(--accent); text-decoration:none; }\na:hover { text-decoration:underline; }\n.topbar { position:sticky; top:0; z-index:10; background:var(--card);\n          border-bottom:1px solid var(--line); padding:8px 16px;\n          display:flex; flex-wrap:wrap; align-items:center; gap:10px;\n          box-shadow:0 1px 4px rgba(0,0,0,0.06); }\n.topbar h1 { font-size:16px; margin:0 12px 0 0; white-space:nowrap; }\n.topbar .vin { color:var(--dim); font-size:13px; margin-right:auto; }\n.topbar input { padding:5px 9px; border:1px solid var(--line);\n                border-radius:5px; width:230px; font-size:13px; }\n.topbar button { padding:5px 10px; border:1px solid var(--line);\n                 border-radius:5px; background:#fafafa; cursor:pointer;\n                 font-size:13px; }\n.topbar button:hover { background:#f0f0f0; }\n#filtercount { color:var(--dim); font-size:12px; min-width:110px; }\n.navlinks { font-size:13px; display:flex; gap:10px; }\n.wrap { max-width:1100px; margin:0 auto; padding:16px; }\n.cards { display:flex; flex-wrap:wrap; gap:16px; }\n.card { background:var(--card); border:1px solid var(--line);\n        border-radius:8px; padding:12px 16px; flex:1 1 380px; }\n.card h2 { font-size:15px; margin:0 0 8px 0; }\ntable.kv { width:100%; border-collapse:collapse; }\ntable.kv td { padding:3px 8px 3px 0; vertical-align:top; }\ntable.kv td.lbl { color:var(--dim); width:45%; }\nh2.sect { font-size:17px; margin:26px 0 10px 0; }\ntable.grid { width:100%; border-collapse:collapse; background:var(--card);\n             border:1px solid var(--line); }\ntable.grid th { background:#ececec; text-align:left; padding:6px 8px;\n                border:1px solid var(--line); font-size:13px; }\ntable.grid td { padding:5px 8px; border:1px solid var(--line);\n                vertical-align:top; overflow-wrap:anywhere; }\ntable.grid tr:nth-child(even) td { background:#fafafa; }\ntr.hasfault td { background:var(--faultbg) !important; }\ndetails.ecu { background:var(--card); border:1px solid var(--line);\n              border-radius:8px; margin:10px 0; }\ndetails.ecu > summary { cursor:pointer; padding:9px 14px; font-weight:600;\n                        display:flex; align-items:center; gap:10px;\n                        list-style-position:inside; }\ndetails.ecu > summary:hover { background:#f7f7f7; }\ndetails.ecu[open] > summary { border-bottom:1px solid var(--line); }\ndetails.ecu .body { padding:6px 14px 12px 14px; }\n.badge { display:inline-block; border-radius:10px; padding:1px 9px;\n         font-size:12px; font-weight:600; }\n.badge.fault { background:var(--fault); color:#fff; }\n.badge.count { background:#e4e9ee; color:#333; font-weight:normal; }\nh3.meas { font-size:13.5px; margin:14px 0 4px 0; color:var(--accent);\n          text-transform:none; }\ntable.vals { width:100%; border-collapse:collapse; }\ntable.vals td { padding:3px 8px; border-bottom:1px solid #eee;\n                vertical-align:top; overflow-wrap:anywhere; }\ntable.vals td.lbl { color:#444; width:55%; }\ntable.vals td.val { font-family:Consolas,monospace; font-size:13px; }\n.faultitem { background:var(--faultbg); border:1px solid #e6b3ac;\n             border-radius:6px; padding:8px 12px; margin:8px 0; }\n.faultitem .fcode { font-family:Consolas,monospace; font-weight:700;\n                    color:var(--fault); margin-right:8px; }\na.fl { text-decoration:none; }\na.fl:hover { text-decoration:none; filter:brightness(1.15); }\n.fltecu { margin:8px 0 16px 0; }\n.subtable { margin:6px 0 0 22px; }\n.footer { color:var(--dim); font-size:12px; margin:30px 0 14px 0;\n          text-align:center; }\n.gloss { color:var(--dim); font-weight:normal; font-size:12px; }\n", "JS": "\nvar debounce = null;\nfunction onFilterInput() {\n  if (debounce) clearTimeout(debounce);\n  debounce = setTimeout(applyFilter, 150);\n}\nfunction applyFilter() {\n  var q = document.getElementById('filterbox').value.trim().toLowerCase();\n  // Filterable units: value rows and fault banners. A fault banner's\n  // textContent includes its nested tables, so it stays visible whenever\n  // any of its detail rows match.\n  var units = document.querySelectorAll('tr.frow, div.faultitem');\n  var shown = 0;\n  for (var i = 0; i < units.length; i++) {\n    var hit = !q || units[i].textContent.toLowerCase().indexOf(q) >= 0;\n    units[i].style.display = hit ? '' : 'none';\n    if (hit) shown++;\n  }\n  var secs = document.querySelectorAll('details.ecu');\n  for (var j = 0; j < secs.length; j++) {\n    var vis = 0;\n    var srows = secs[j].querySelectorAll('tr.frow, div.faultitem');\n    for (var k = 0; k < srows.length; k++)\n      if (srows[k].style.display !== 'none') vis++;\n    if (q) {\n      secs[j].style.display = vis ? '' : 'none';\n      if (vis) secs[j].open = true;\n    } else {\n      secs[j].style.display = '';\n    }\n  }\n  document.getElementById('filtercount').textContent =\n    q ? (shown + ' matching items') : '';\n}\nfunction setAll(open) {\n  var secs = document.querySelectorAll('details.ecu');\n  for (var i = 0; i < secs.length; i++) secs[i].open = open;\n}\nfunction presetFilter(q) {\n  var b = document.getElementById('filterbox');\n  b.value = q;\n  applyFilter();\n  b.focus();\n  return false;\n}\nfunction openFor(el) {\n  // open the element itself (if collapsible) and any collapsed ancestor\n  if (!el) return;\n  if (el.tagName === 'DETAILS') el.open = true;\n  if (el.closest) {\n    var p = el.closest('details');\n    while (p) { p.open = true; p = p.parentElement &&\n                p.parentElement.closest('details'); }\n  }\n}\nfunction openTarget() {\n  if (!location.hash) return;\n  openFor(document.getElementById(location.hash.substring(1)));\n}\nwindow.addEventListener('hashchange', openTarget);\ndocument.addEventListener('DOMContentLoaded', function () {\n  openTarget();\n  document.body.addEventListener('click', function (e) {\n    var a = e.target.closest ? e.target.closest('a[href^=\"#\"]') : null;\n    if (!a) return;\n    var id = a.getAttribute('href').substring(1);\n    var t = document.getElementById(id);\n    if (!t) return;\n    if (a.closest('summary')) {\n      // navigate without toggling the enclosing section\n      e.preventDefault();\n      openFor(t);\n      if (location.hash === '#' + id) t.scrollIntoView();\n      else location.hash = id;\n    } else {\n      openFor(t);\n    }\n  });\n});\n", "TRANSLIT": {"228": "ae", "246": "oe", "252": "ue", "223": "ss", "196": "Ae", "214": "Oe", "220": "Ue", "8211": "-", "8212": "-", "160": " ", "8216": "'", "8217": "'", "8220": "\"", "8221": "\""}, "PROTOCOL_TYPES": {"BEFOREREP": "Pre-VAL (before repair)", "AFTERREP": "Post-VAL (after repair)", "WHILEREP": "Interim-VAL (during repair)"}, "MEAS_OBJECT_TITLES": {"Identifikation": "Identification", "Codierung": "Coding", "Fehler": "Fault memory", "Erweiterter Fehlerspeicher": "Extended fault memory", "Messwerte": "Measured values", "Istwerte": "Actual values", "Fahrzeugdaten": "Vehicle data", "Statistikwerte": "Statistics", "Adaptionswerte": "Adaptation values"}, "TRANS_LABEL": {"Shift-/Keylock Magnet Position unplausibel(Invalid Signal)": "Shift/keylock magnet position implausible (Invalid Signal)", "Steuergeraet EPB - DAR nicht verfuegbar": "Control unit EPB - DAR (drive-away release) not available", "Lin Botschaftsfehler BKE-Tastenfeld": "LIN message fault, climate control keypad", "Displaykontroller Watchdog Timeout": "Display controller watchdog timeout", "Anzeige der der angelernten Komponenten": "Display of the learned components", "FH-Motor Rippelqualitaet 1-6, Kisi - Motor, FH - Motor - Strom": "Window motor ripple quality 1-6, Kisi motor, window motor current"}, "TRANS_SEGMENT": {"Crashdaten von Crashereignis #": "Crash data from crash event #", "Crashdaten Teil #": "Crash data part #", "Crashdaten Teil # erfolgreich gelesen": "Crash data part # read successfully", "Teil #": "Part #", "Wert #": "Value #", "Warnung #": "Warning #", "Aktive Warnung #": "Active warning #", "Bordcomputer Anzeigenkonfiguration Schluessel #": "On-board computer display configuration, key #", "Bordcomputer Anzeigenkonfiguration Werkseinstellung": "On-board computer display configuration, factory setting", "Bordcomputer Menuekonfiguration": "On-board computer menu configuration", "Bordcomputer Menuekonfiguration #": "On-board computer menu configuration #", "Bordcomputer Menuekonfiguration Byte #": "On-board computer menu configuration byte #", "Bordcomputer vorne": "On-board computer front", "Bordcomputer hinten": "On-board computer rear", "Diagnose-Monitoring Pruefbedingungen": "Diagnostic monitoring test conditions", "Pruefbedingungen im aktuellen Fahrzyklus erfuellt (#-#)": "Test conditions fulfilled in current driving cycle (#-#)", "Diagnose-Monitoring Pruefungen": "Diagnostic monitoring tests", "Pruefung im aktuellen Fahrzyklus durchgefuehrt (#-#)": "Test performed in current driving cycle (#-#)", "Datum und Zeit": "Date and time", "Kennlinien und Schwellen": "Characteristic curves and thresholds", "Zuendmaske #": "Ignition mask #", "Zuendkreisdiagnose #": "Ignition circuit diagnosis #", "Zuendkreisansteuerung #": "Ignition circuit activation #", "Zuendanforderung #": "Ignition request #", "kompatible Aenderung der freigegebenen Version_#": "compatible change of the released version_#", "kompatible Aenderung der freigegebenen Version": "compatible change of the released version", "Freigegebene Version_#": "Released version_#", "Freigegebene Version": "Released version", "Fehler # (nicht belegt)": "Fault # (not assigned)", "Schluessel #": "Key #", "Schluessel": "Key", "allgemeiner Schluessel Status": "General key status", "Leistungs- und Drehmomentanzeige": "Power and torque display", "Satellitenkommunikation # ms vor crash": "Satellite communication # ms before crash", "Satellitenkommunikation # us vor crash": "Satellite communication # us before crash", "Satellitenkommunikation # ms nach crash": "Satellite communication # ms after crash", "Satellitenkommunikation # us nach crash": "Satellite communication # us after crash", "KS Fehlerliste Byte #": "KS fault list byte #", "Ks Fehlerliste Byte #": "KS fault list byte #", "KS Liste Byte #": "KS list byte #", "Interne Signale des Steuergeraets": "Internal signals of the control unit", "Geschwindigkeit": "Speed", "Wachhaltegruende": "Keep-awake reasons", "Letzter Kl#-aus Zyklus": "Last Kl#-off cycle", "Letzter Kl#-aus Zyklus Kl#-aus Zeitstempel": "Last Kl#-off cycle, Kl#-off timestamp", "Letzter Kl#-aus Zyklus Kl#-ein Zeitstempel": "Last Kl#-off cycle, Kl#-on timestamp", "Worst Case Zyklus Klemme S ein": "Worst-case cycle, terminal S on", "Worst Case Zyklus Klemme S ein Kl#-aus Zeitstempel": "Worst-case cycle terminal S on, Kl#-off timestamp", "Worst Case Zyklus Klemme S ein Kl#-ein Zeitstempel": "Worst-case cycle terminal S on, Kl#-on timestamp", "Worst Case Zyklus nicht schlafbereiter SG": "Worst-case cycle, control unit not ready to sleep", "Worst Case Zyklus nicht schlafbereiter SG Kl#-aus Zeitstempel": "Worst-case cycle ECU not ready to sleep, Kl#-off timestamp", "Worst Case Zyklus nicht schlafbereiter SG Kl#-ein Zeitstempel": "Worst-case cycle ECU not ready to sleep, Kl#-on timestamp", "Worst Case Zylus nicht schlafbereiter Steuergeraete": "Worst-case cycle, control units not ready to sleep", "Worst Case Zyklus Wake-Up": "Worst-case cycle wake-up", "Worst Case Zyklus WakeUp Kl#-aus Zeitstempel": "Worst-case cycle wakeup, Kl#-off timestamp", "Worst Case Zyklus WakeUp Kl#-ein Zeitstempel": "Worst-case cycle wakeup, Kl#-on timestamp", "Worst Case Zyklus Kommunikationsdauer": "Worst-case cycle communication duration", "Worst Case Zyklus Kommunikationsdauer Kl#-aus Zeitstempel": "Worst-case cycle communication duration, Kl#-off timestamp", "Worst Case Zyklus Kommunikationsdauer Kl#-ein Zeitstempel": "Worst-case cycle communication duration, Kl#-on timestamp", "Pinzustaende": "Pin states", "Ersatzmassnahmen": "Substitute measures", "HIST Ruhestromueberschreitung": "HIST quiescent current exceedance", "Ruhestromueberschreitung_#": "Quiescent current exceedance_#", "HIST Ruhespannungsunterschreitung": "HIST quiescent voltage undershoot", "Ruhespannungsunterschreitung_#,#V_#": "Quiescent voltage undershoot_#.#V_#", "Warnung-ID": "Warning ID", "Warnung im Vordergrund": "Warning in foreground", "Wartet auf die Erstanzeige": "Waiting for first display", "Wartet auf die Displayzuteilung": "Waiting for display allocation", "begrentzte Anzeige abgelaufen": "Limited display period expired", "FFB Schluessel-Status": "FFB (remote control) key status", "Fehlerspeicherliste (KD-Bit)": "Fault memory list (KD bit)", "Analyse der aktuellen Fehlerursache": "Analysis of the current fault cause", "Analyse der allgemeinen Fehlerursache": "Analysis of the general fault cause", "Digitale Messwerte lesen": "Read digital measured values", "Status Steuergeraeteinterne Spannung": "Status of control-unit-internal voltage", "Taste # betaetigt": "Button # pressed", "HIST Chronik fuer Batteriebeeinflussung": "HIST history of battery influence", "Chronik fuer Batteriebeeinflussung_#": "History of battery influence_#", "HIST Anzahl Wakeups d. BEM / ForceSleep": "HIST number of wakeups by BEM / ForceSleep", "Data Record # Zaehler_Klasse": "Data record # counter_class", "Crashzaehler #": "Crash counter #", "Gesp. Zaehlw. FS# (SLV, LNV, SHV, SNV)": "Stored count FS# (SLV, LNV, SHV, SNV)", "Gesp. Zaehlw. P# (SLV, LNV, SHV, SNV)": "Stored count P# (SLV, LNV, SHV, SNV)", "Gesp. Zaehlw. FS# (Lordose)": "Stored count FS# (lumbar)", "Gesp. Zaehlw. P# (Lordose)": "Stored count P# (lumbar)", "Gesp. Zaehlw. P# (STV, LDH mech., LDW mech.)": "Stored count P# (STV, LDH mech., LDW mech.)", "Gesp. Zaehlw. FS# (STV, LDH mech., LDW mech.)": "Stored count FS# (STV, LDH mech., LDW mech.)", "Gesp. Zaehlw. P#, P#, P#, P# (STV)": "Stored count P#, P#, P#, P# (STV)", "Gesp. Zaehlw. FS#, FS#, FS#, FS# (STV)": "Stored count FS#, FS#, FS#, FS# (STV)", "Kuehlmitteltemperatur": "Coolant temperature", "Datum #": "Date #", "Datum": "Date", "Spannung": "Voltage", "Warnungen Motor": "Engine warnings", "Eingangssignale der Peripherie": "Input signals from peripherals", "Ausgangssignale der Peripherie": "Output signals to peripherals", "HIST Reduzierung Innengeblaese": "HIST reduction of interior blower", "Reduzierung Innengeblaese_#": "Reduction of interior blower_#", "Thoraxairbag hinten Fahrerseite": "Thorax airbag rear, driver side", "Thoraxairbag hinten Beifahrerseite": "Thorax airbag rear, passenger side", "Gurtstraffer hinten Fahrerseite": "Belt tensioner rear, driver side", "Gurtstraffer hinten Beifahrerseite": "Belt tensioner rear, passenger side", "Gurtstraffer hinten Mitte": "Belt tensioner rear, center", "Ueberrollschutz Fahrerseite": "Rollover protection, driver side", "Ueberrollschutz Beifahrerseite": "Rollover protection, passenger side", "Lenksaeule Kraft-Wegsteuerung": "Steering column force/travel control", "A-Saeule Fahrerseite, Y-Richtung": "A-pillar driver side, Y direction", "A-Saeule Fahrerseite, X-Richtung": "A-pillar driver side, X direction", "A-Saeule Beifahrerseite, Y-Richtung": "A-pillar passenger side, Y direction", "A-Saeule Beifahrerseite, X-Richtung": "A-pillar passenger side, X direction", "C-Saeule Fahrerseite, Y-Richtung": "C-pillar driver side, Y direction", "C-Saeule Fahrerseite, X-Richtung": "C-pillar driver side, X direction", "C-Saeule Beifahrerseite, Y-Richtung": "C-pillar passenger side, Y direction", "C-Saeule Beifahrerseite, X-Richtung": "C-pillar passenger side, X direction", "Fussgaengerschutzsensor Beifahrerseite": "Pedestrian protection sensor, passenger side", "Fussgaengerschutzsensor Fahrerseite": "Pedestrian protection sensor, driver side", "OBD Monitor Status seit Fehlerspeicher loeschen": "OBD monitor status since fault memory clearing", "Widerstaende, Qualitaet, Fehlerbits, ADC": "Resistances, quality, fault bits, ADC", "Gesamtdauer Kl#-ein (h)": "Total duration Kl#-on (h)", "Oeldruck": "Oil pressure", "Oelstand": "Oil level", "Oelstand Anzeigeschwellen": "Oil level display thresholds", "Verfuegbarkeit": "Availability", "Interne FehlerSpekIndizes von CAN-Signalfehler LWS": "Internal fault-spec indices of CAN signal fault LWS", "Interne FehlerSpekIndizes von Datensatz": "Internal fault-spec indices of data record", "Interner FehlerSpekIndizes von SG Defekt": "Internal fault-spec indices of ECU defect", "Bilanz der letzten Fahrt (Ah)": "Balance of the last trip (Ah)", "Dauer CAN ein (h)": "Duration CAN on (h)", "Dauer (h)": "Duration (h)", "WU Teil #": "WU part #", "Zaehler": "Counter", "Zaehler #": "Counter #", "BC-Konfiguration Byte # BC-Seite Fahrzeug Zeile #": "BC configuration byte #, BC page vehicle, line #", "Motoroeltemperatur": "Engine oil temperature", "Temperatur": "Temperature", "Zeitstempel Datum": "Timestamp date", "Zeitstempel": "Timestamp", "Standheizung inaktiv/aktiv": "Auxiliary heating inactive/active", "Beleuchtungsstaerke IN": "Illuminance IN", "Ueberspannungskonfiguration Nacht": "Overvoltage configuration, night", "Serviceintervallverlaengerung": "Service interval extension", "SW-Stand SG-Programm": "SW version, ECU program", "SW-Stand Bolo": "SW version Bolo", "Rad-IDs postitionsbezogen lesen vorne links": "Read wheel IDs by position, front left", "Rad-IDs postitionsbezogen lesen vorne rechts": "Read wheel IDs by position, front right", "Rad-IDs postitionsbezogen lesen hinten links": "Read wheel IDs by position, rear left", "Rad-IDs postitionsbezogen lesen hinten rechts": "Read wheel IDs by position, rear right", "Batterie neu": "Battery new", "HIST Chronik fuer sporadische Generatorfehler": "HIST history of sporadic alternator faults", "Kennlinie G-Force": "Characteristic curve G-force", "Kennlinie Geschwindigkeitskorrektur": "Characteristic curve, speed correction", "Kuehlwassertemperatur Kennlinie": "Coolant temperature characteristic curve", "Sonnenrollo(Dach)-Codierung (MD#)": "Sun blind (roof) coding (MD#)", "HIST kein Start/Stop Betrieb": "HIST no start/stop operation", "Software nicht konsistent": "Software not consistent", "Hoehen": "Heights", "Getriebe": "Transmission", "Status (#.Byte)": "Status (byte #)", "Zustaende (#.Byte)": "States (byte #)", "Bedienhoerer": "Handset", "Tankplausibiltaet": "Tank plausibility", "Warnungen BCM_V und SWSG": "Warnings BCM_V and SWSG", "Warnungen BCM_vorne": "Warnings BCM front", "Verlernzaehler": "Unlearn counter", "Betriebszustaende": "Operating states", "Haeufigkeitszaehler": "Frequency counter", "Daempferregelung": "Damper control", "Betriebsdauerzaehlerstand beim Einschalten der Warnlampe": "Operating time counter reading when warning lamp switched on", "Betriebsdauerzaehler": "Operating time counter", "Gurtschlossstatus hinten, Mitte": "Belt buckle status rear, center", "Gurtschlossstatus hinten, Beifahrerseite": "Belt buckle status rear, passenger side", "Gurtschlossstatus hinten, Fahrerseite": "Belt buckle status rear, driver side", "Gurtschlossstatus vorne, Beifahrerseite": "Belt buckle status front, passenger side", "Gurtschlossstatus vorne, Fahrerseite": "Belt buckle status front, driver side", "Fertigungsdaten Getriebe": "Transmission production data", "Oeldruckregelung": "Oil pressure control", "Saeureschichtung (%)": "Acid stratification (%)", "SBE/AKSE Byte #": "SBE/AKSE byte #", "Sitz Fahrer": "Driver seat", "Sitz Beifahrer": "Passenger seat", "Anhaenger": "Trailer", "Tuer Fahrer": "Driver door", "Tuer Beifahrer": "Passenger door", "Verdecksteuergeraet": "Convertible top control unit", "Bedien-Klima": "Climate control panel", "Rueckfahrkamera": "Reversing camera", "Motor": "Engine", "Waehlhebel": "Selector lever", "Systemzustaende": "System states", "PWM Ausgaenge": "PWM outputs", "Ausgaenge": "Outputs", "LD unten befuellen Filterwert #": "LD lower fill, filter value #", "LD unten entlueften Filterwert #": "LD lower vent, filter value #", "LD oben befuellen Filterwert #": "LD upper fill, filter value #", "LD oben entlueften Filterwert #": "LD upper vent, filter value #", "Verstellweg Ein/Ausstiegshilfe": "Adjustment travel, entry/exit aid", "Motortemperatur # (nach Thermomodell)": "Engine temperature # (per thermal model)", "Status Gurtschloesser (qualifiziert)": "Belt buckle status (qualified)", "Geschwindigkeitsstuetzstelle Schwenkwinkelbegrenzung [#]": "Speed interpolation point, swivel angle limit [#]", "Begrenzungsfaktorstuetzstelle Schwenkwinkelbegrenzung [#]": "Limiting factor interpolation point, swivel angle limit [#]", "Pruefung durchgefuehrt": "Test performed", "Autonome Pruefbarkeit": "Autonomous testability", "Fehlersymptom bei erstem Auftreten": "Fault symptom at first occurrence", "Zaehler Warm Up Cycle": "Warm-up cycle counter", "Markierter Fehler": "Marked fault", "BattTempUeberschreitung # [h]": "Battery temp exceedance # [h]", "Zaehler LLA_Stufe #": "Counter LLA_stage #", "Zaehler LLA_Stufe#": "Counter LLA_stage #", "Wakeup Zaehler": "Wakeup counter", "Zaehler Stopp verbieten": "Counter: prohibit stop", "Batterie Saeure Temp": "Battery acid temp", "Zaehler Start anfordern": "Counter: request start", "Motor Start anfordern [Strom": "Engine start request [current", "BC-Konfiguration Byte # Speed Limit #": "BC configuration byte #, speed limit #", "Schwelle fuer Speed-Limit-Warnung #": "Threshold for speed limit warning #", "Oelservice": "Oil service", "Pruefsumme": "Checksum", "Weitere Fehler": "Further faults", "Ueberspannungsschwelle": "Overvoltage threshold", "Fehler": "Fault", "FH Schalter hinten": "Window switch rear", "Funkschluessel aktivieren": "Activate radio key", "Schluessel Funkschluessel #": "Key, radio key #", "Sitzlaengsverst. / Lehnenneigungsverst.": "Seat longitudinal adj. / backrest tilt adj.", "Sitzhoehenverst. / Sitzneigungsverst.": "Seat height adj. / seat tilt adj.", "Gesp. Position Lordose oben P# (belasteter Sitz)": "Stored position lumbar upper P# (loaded seat)", "Gesp. Position Lordose unten P# (belasteter Sitz)": "Stored position lumbar lower P# (loaded seat)", "Gesp. Position Lordose oben P# (unbelasteter Sitz)": "Stored position lumbar upper P# (unloaded seat)", "Gesp. Position Lordose unten P# (unbelasteter Sitz)": "Stored position lumbar lower P# (unloaded seat)", "Gesp. Position Lordose oben FS# (belasteter Sitz)": "Stored position lumbar upper FS# (loaded seat)", "Gesp. Position Lordose unten FS# (belasteter Sitz)": "Stored position lumbar lower FS# (loaded seat)", "Gesp. Position Lordose oben FS# (unbelasteter Sitz)": "Stored position lumbar upper FS# (unloaded seat)", "Gesp. Position Lordose unten FS# (unbelasteter Sitz)": "Stored position lumbar lower FS# (unloaded seat)", "Lordosenverstellung Druck": "Lumbar adjustment pressure", "Entwickler Steuergeraete-Status": "Developer ECU status", "Softwareblock + Info Sitzlaengenverst.": "Software block + info, seat longitudinal adj.", "Softwareblock + Info Sitzhoehenverst.": "Software block + info, seat height adj.", "Lastwechselzaehler # (Gesamte Verstellungen)": "Load cycle counter # (total adjustments)", "Lastwechselzaehler # (Gesamte Vertellungen)": "Load cycle counter # (total adjustments)", "Aussentemperatur": "Outside temperature", "Bit Optionen Reserve(Bit#)": "Bit options, reserve (bit #)", "Bit Optionen Schrittlaenge": "Bit options, step length", "Bit Optionen Halten Schrittlaenge": "Bit options, hold step length", "Bit Optionen Master Schrittmotordrehrichtung invertiert": "Bit options, master stepper motor direction inverted", "Bit Optionen Slave Schrittmotordrehrichtung invertiert": "Bit options, slave stepper motor direction inverted", "Vorderachssensor ADC-Stuetzstelle [#]": "Front axle sensor, ADC interpolation point [#]", "Vorderachssensor Einfederung Stuetzstelle [#]": "Front axle sensor, compression interpolation point [#]", "Hinterachssensor ADC-Stuetzstelle [#]": "Rear axle sensor, ADC interpolation point [#]", "Hinterachssensor Einfederung Stuetzstelle [#]": "Rear axle sensor, compression interpolation point [#]", "Schwenkempfindlichkeit Stuetzstelle [#]": "Swivel sensitivity, interpolation point [#]", "Geschwindigkeitsstuetzstelle Knickwinkelkennlinie [#]": "Speed interpolation point, kink angle characteristic [#]", "Radwinkelstuetzstelle Knickwinkelkennlinie [#]": "Wheel angle interpolation point, kink angle characteristic [#]", "Sportmodus Geschwindigkeitsstuetzstelle Knickwinkelkennlinie [#]": "Sport mode speed interpolation point, kink angle characteristic [#]", "Sportmodus Radwinkelstuetzstelle Knickwinkelkennlinie [#]": "Sport mode wheel angle interpolation point, kink angle characteristic [#]", "Geschwindigkeitsstuetzstelle Schwenkempfindlichkeit [#]": "Speed interpolation point, swivel sensitivity [#]", "Gierratengewichtung Stuetzstelle [#]": "Yaw rate weighting, interpolation point [#]", "Schwenkwinkelstuetzstellen Grad Nichtlinearitaet [#]": "Swivel angle interpolation points, degrees non-linearity [#]", "Schwenkwinkelstuetzstellen Radiant Nichtlinearitaet [#]": "Swivel angle interpolation points, radians non-linearity [#]", "Sportmodus Schwenkwinkelstuetzstelle Grad Nichtlinearitaet [#]": "Sport mode swivel angle interpolation point, degrees non-linearity [#]", "Sportmodus Schwenkwinkelstuetzstelle Radiant Nichtlinearitaet [#]": "Sport mode swivel angle interpolation point, radians non-linearity [#]", "Geschwindigkeitsstuetzstelle Gierratengewichtung [#]": "Speed interpolation point, yaw rate weighting [#]", "Zuendwinkel": "Ignition angle", "Batterie leer (via FFB)": "Battery empty (via FFB)", "Batterie leer": "Battery empty", "Schluesseltyp": "Key type", "Schluesselmodus": "Key mode", "Reifenumfaenge (Geschwindigkeit Wegstrecke)": "Tire circumferences (speed, distance)", "Passwort war gueltig": "Password was valid", "Signatur war gueltig": "Signature was valid", "Bedingungen Anlernvorgang SW-Endanschlaege": "Conditions for teach-in of SW end stops", "Steuergeraet in Diagnose": "Control unit in diagnosis", "Wisch/Wasch-Parameter": "Wipe/wash parameters", "INFO zu Rekuperation Einschraenkungen": "INFO on recuperation restrictions", "RekuEinschraenkungen": "Recuperation restrictions", "Position der Analoganzeigen": "Position of analog gauges", "Versorgungsspannung ausserhalb des Betriebsbereiches": "Supply voltage outside operating range", "Zuendspannung oberhalb des zulaessigen Bereiches": "Ignition voltage above permissible range", "Zuendspannung unterhalb des zulaessigen Bereiches": "Ignition voltage below permissible range", "Zuendspannung ausserhalb des zulaessigen Bereiches": "Ignition voltage outside permissible range", "Zuendspannung innerhalb des Bereiches fuer Zuend-ASIC-Ueberwachung": "Ignition voltage within range for ignition ASIC monitoring", "Zuendspannung innerhalb des Bereiches fuer NVM-Schreibzugriffe": "Ignition voltage within range for NVM write accesses", "Satellitenversorgungsspannung oberhalb des zulaessigen Bereiches": "Satellite supply voltage above permissible range", "Satellitenversorgungsspannung unterhalb des zulaessigen Bereiches": "Satellite supply voltage below permissible range", "Sitzbelegungsstatus fuer Gurtwarnung": "Seat occupancy status for belt warning", "CAN-Ueberwachung aktiv": "CAN monitoring active", "Geschwindigkeitsinformation gueltig": "Speed information valid", "Steuergeraet ist im BusOff-Zustand": "Control unit is in bus-off state", "Bisherige Anzahl Crashes": "Number of crashes so far", "Bisherige Anzahl Fussgaengerschutzausloesungen": "Number of pedestrian protection deployments so far", "Bisherige Anzahl Front/Heck-Crashes": "Number of front/rear crashes so far", "Bisherige Anzahl Crashes Fahrerseite": "Number of driver-side crashes so far", "Bisherige Anzahl Crashes Beifahrerseite": "Number of passenger-side crashes so far", "Bisherige Anzahl Crashes Rollover/Pitchover": "Number of rollover/pitchover crashes so far", "Stromflussdauer Thoraxairbag hinten Fahrerseite": "Current flow duration, thorax airbag rear driver side", "Stromflussdauer Thoraxairbag hinten Beifahrerseite": "Current flow duration, thorax airbag rear passenger side", "Stromflussdauer Gurtstraffer hinten Fahrerseite": "Current flow duration, belt tensioner rear driver side", "Stromflussdauer Gurtstraffer hinten Beifahrerseite": "Current flow duration, belt tensioner rear passenger side", "Stromflussdauer Gurtstraffer hinten Mitte": "Current flow duration, belt tensioner rear center", "Stromflussdauer Ueberrollschutz Fahrerseite": "Current flow duration, rollover protection driver side", "Stromflussdauer Ueberrollschutz Beifahrerseite": "Current flow duration, rollover protection passenger side", "Stromflussdauer Lenksaeule Kraft-Wegsteuerung": "Current flow duration, steering column force/travel control", "PWM-Signal mindestens fuer eine Sekunde gesendet": "PWM signal sent for at least one second", "CAN-Signal mindestens fuer eine Sekunde gesendet": "CAN signal sent for at least one second", "Winkel zwischen optischer Achse und harten Anschlag": "Angle between optical axis and hard stop", "Winkel zwischen optischer Achse und weichen Anschlag": "Angle between optical axis and soft stop", "Uebertragungsfaktor HS": "Transfer factor HS", "Uebertragungsfaktor Winkel": "Transfer factor angle", "Zeit vor/nach Motorbestromung": "Time before/after motor energization", "Halbierung der Stromwerte fuer bessere Aufloesung": "Halving of current values for better resolution", "Anzahl Zuendungen": "Number of ignitions", "Schluessel # Auto Lock Bit#": "Key # auto lock bit #", "UHF Empfaenger Programmierung": "UHF receiver programming", "UHF Zaehler": "UHF counter", "Komfort schlaeft": "Comfort bus asleep", "MMI schlaeft": "MMI asleep", "Antrieb schlaeft": "Drivetrain bus asleep", "Fahrwerk schlaeft": "Chassis bus asleep", "LIN schlaeft": "LIN asleep", "Zeitstempel WUG ein": "Timestamp WUG on", "Zeitstempel WUG aus": "Timestamp WUG off", "Verbrauchsmassnahmen VM Aoff Start-Stop": "Consumption measures VM Aoff, start-stop", "Verbrauchsmassnahmen VM Aoff Segeln": "Consumption measures VM Aoff, coasting", "Verbrauchsmassnahmen VM Aoff Schaltpunkte ECO": "Consumption measures VM Aoff, shift points ECO", "Verbrauchsmassnahmen VM SPORT Start-Stop": "Consumption measures VM SPORT, start-stop", "Verbrauchsmassnahmen VM SPORT Segeln": "Consumption measures VM SPORT, coasting", "Verbrauchsmassnahmen VM SPORT Schaltpunkte ECO": "Consumption measures VM SPORT, shift points ECO", "SIA Ruecksetzdaten": "SIA reset data", "Haendlernummer": "Dealer number", "Funktionszustaende": "Function states", "Radposition der ID": "Wheel position of the ID", "Zuletzt empfangene RAD-ID": "Most recently received wheel ID", "Zuendkreiskodierung # Reserviert fuer zusaetzliche Zuendpille #": "Ignition circuit coding #, reserved for additional squib #", "Messwert reservierter Zuendkreis #": "Measured value, reserved ignition circuit #", "LIN Luftguete Sensor": "LIN air quality sensor", "Intervallton # hinten": "Interval tone # rear", "Intervallton # vorne": "Interval tone # front", "Hoehenwerte von PASM": "Height values from PASM", "Entwicklermenue": "Developer menu", "Kartendaten Navi Suedafrika": "Map data navi South Africa", "Kartendaten Navi Suedamerika": "Map data navi South America", "min. Betaetigungszeit Schluesseltaste #": "Min. actuation time, key button #", "gefilterter Taste # Status": "Filtered button # status", "EZS Schluessel Position": "EZS key position", "EVLS Tasterbetaetigung": "EVLS button actuation", "Scheinwerfer links": "Headlight left", "Scheinwerfer rechts": "Headlight right", "Verstaerker": "Amplifier", "Batterie-#D-Code": "Battery #D code", "Dauer der letzten Fahrt [h]": "Duration of the last trip [h]", "Grund des Eintrags [#=Fremdladung, #=falsche Fremdladung, #=Batterieaberkennung, #=Zeit-Datums-Aenderung]": "Reason for entry [#=external charging, #=incorrect external charging, #=battery rejection, #=time/date change]", "Zeit-Datumsaenderungsnummer": "Time/date change number", "Datum/Zeit vor Aenderung": "Date/time before change", "Batteriespannung Kl#-aus": "Battery voltage Kl#-off", "Batteriespannung Kl#-ein": "Battery voltage Kl#-on", "Dauer Klemme-S ein": "Duration terminal S on", "Letztes aktives BC-Menue": "Last active BC menu", "Dimmung Ambiente Licht": "Dimming ambient light", "Dimmung": "Dimming", "Verbrauchsguenstiger Kennfeldbereich Drehzahl": "Fuel-efficient map range, engine speed", "Verbrauchsguenstiger Kennfeldbereich Y# Min": "Fuel-efficient map range Y# min", "Verbrauchsguenstiger Kennfeldbereich Y# Max": "Fuel-efficient map range Y# max", "Histogramm Nr. #": "Histogram no. #", "Tanklogger": "Tank logger", "Nachtankereignis #": "Refueling event #", "Warnungslogger": "Warning logger", "Adaption Geberrad Zylinder #": "Adaptation sender wheel, cylinder #", "Adaption Klopfregelung Zylinder #": "Adaptation knock control, cylinder #", "Adaption Neutralgangsensor": "Adaptation neutral gear sensor", "Adaptionsdaten Block #": "Adaptation data block #", "Aktive Warnungen als Liste": "Active warnings as list", "Aktive Warnungen als Bitfeld": "Active warnings as bit field", "Warnungsidentifikation": "Warning identification", "Warnungskonfiguration": "Warning configuration", "Schlafbereitschaft": "Sleep readiness", "HIST Abschaltstufenchronik": "HIST shutdown stage history", "Abschaltstufen_Eintrag_#": "Shutdown stage entry_#", "Umgebungswerte": "Ambient values", "Umgebungsdaten": "Ambient data", "RBM Daten #": "RBM data #", "Eintrag #": "Entry #", "Eintrag_#": "Entry_#", "Codierung": "Coding", "Tank-Variante #": "Tank variant #", "Hochschaltempfehlung": "Upshift recommendation", "Parametrierung Kurvenlicht (Algorithmus)": "Parameterization cornering light (algorithm)", "Parametrierung Kurvenlicht (Schrittmotor)": "Parameterization cornering light (stepper motor)", "Parametrierung Autobahnlicht (Algorithmus)": "Parameterization highway light (algorithm)", "Parametrierung Stadtlicht (Algorithmus)": "Parameterization city light (algorithm)", "Parametrierung ALWR (Algorithmus)": "Parameterization ALWR (algorithm)", "Parametrierung ALWR (Schrittmotor)": "Parameterization ALWR (stepper motor)", "Parametrierung AFS / VLV (Schrittmotor)": "Parameterization AFS / VLV (stepper motor)", "Parametrierung dyn. Haltestrom DKL (Schrittmotor)": "Parameterization dyn. holding current DKL (stepper motor)", "Parametrierung Fahrzeug": "Parameterization vehicle", "Kennfeld": "Map", "Gang #": "Gear #", "Tag": "Day", "Monat": "Month", "Jahr": "Year", "Stunde": "Hour", "HIST Energiebilanz Standphase": "HIST energy balance, idle phase", "Energiebilanz Standphase_#": "Energy balance idle phase_#", "HIST Energiebilanz Fahrt": "HIST energy balance, trip", "Energiebilanz Fahrt_#": "Energy balance trip_#", "HIST Gesamtenergiebilanz": "HIST total energy balance", "Vorindikator #": "Pre-indicator #", "Istverbauliste": "Actual installation list", "Sollverbauliste": "Target installation list", "Entwicklungsschnittstellen": "Development interfaces", "Programmierdatum": "Programming date", "Aussenbeleuchtungsparameter": "Exterior lighting parameters", "History Fehlerspeicher": "History fault memory", "ForceSleep Historiendaten": "ForceSleep history data", "Prevent Wakeup Historiendaten": "Prevent wakeup history data", "Chronik Start/Stop": "History start/stop", "Bitfeld #": "Bit field #", "CAN-Signale #": "CAN signals #", "CAN-Signale #/CAN-Status": "CAN signals #/CAN status", "Katalysator": "Catalytic converter", "Entnehmbare Ladung Qe (Ah)": "Extractable charge Qe (Ah)", "Kennlinien Nacht": "Characteristic curves, night", "Kennlinien Tag": "Characteristic curves, day", "RDK-Solldruckpaare": "RDK target pressure pairs", "HIST Fahrzeugliegenbleiberchronik": "HIST vehicle breakdown history", "Fahrzeugliegenbleiberchronik_#": "Vehicle breakdown history_#", "Tankdaten": "Tank data", "GQS Daten": "GQS data", "CAN-Bits": "CAN bits", "Druckkorrekturparameter": "Pressure correction parameters", "Start/Stopp Ereignisspeicher": "Start/stop event memory", "Historienspeicher ZV": "History memory, central locking", "Historienspeicher DWA": "History memory, anti-theft alarm", "HIST Batteriealterung": "HIST battery aging", "Batteriealterung_#": "Battery aging_#", "Gemischbildung": "Mixture formation", "Kilometerstand": "Odometer reading", "Kodierwert": "Coding value", "Kodierbyte #": "Coding byte #", "HIST Batteriewechselchronik#": "HIST battery replacement history #", "Batteriewechselchronik_#": "Battery replacement history_#", "Batterienummer": "Battery number", "freigeschaltet": "enabled", "Autom.Test": "Autom. test", "Leuchtdichte OUT": "Luminance OUT", "Diagnosebereitschaft": "Diagnostic readiness", "HIST Stop verbieten": "HIST prohibit stop", "Stop verbieten": "Prohibit stop", "manuell quittiert": "manually acknowledged", "in Warnereignisspeicher": "in warning event memory", "Allgemein": "General", "Standard Software Komponenten MOST": "Standard software components MOST", "Spoiler-Parameter": "Spoiler parameters", "Deaktivierungsschalter/PSBR": "Deactivation switch/PSBR", "Fahrerairbag #. Stufe": "Driver airbag, stage #", "Beifahrerairbag #. Stufe": "Passenger airbag, stage #", "ApplikationSoftwareDatum": "Application software date", "Weitere Codierungen": "Further codings", "Schluesselparameter": "Key parameters", "TesterdatumKodierung Lesen": "Tester date coding, read", "Testerdatum Schreiben": "Tester date, write", "Status WFS-Slaves": "Status WFS (immobilizer) slaves", "Schalter Taster": "Switches and buttons", "V# Anfang": "V# start", "V# Ende": "V# end", "V# Farbe": "V# color", "Status Motornormierung": "Status motor normalization", "LIN Motorsteuerung #": "LIN motor control #", "Stecker C": "Connector C", "HIST Leerlaufanhebungschronik": "HIST idle-speed increase history", "Leerlaufanhebungschronik_#": "Idle-speed increase history_#", "Warnlampen": "Warning lamps", "Grundinformation": "Basic information", "SW-Versionen Liste #": "SW versions list #", "Bitwerte #": "Bit values #", "allgemeine Konfiguration": "general configuration", "Berechnete, angezeigte Werte": "Calculated, displayed values", "Zuziehhilfe": "Soft-close assist", "Crashout/Lampen": "Crashout/lamps", "CAN-Ausgabe": "CAN output", "Nockenwellenverstellung": "Camshaft adjustment", "Zustand KlG#": "State KlG#", "VZA-Konfiguration": "VZA configuration", "Motordrehzahl": "Engine speed", "CAN Eingangssignale": "CAN input signals", "verbaut": "installed", "funktionsbereit": "operational", "EEPROM Datensatz Info": "EEPROM data record info", "Prozenteinstellung IN": "Percent setting IN", "ApplikationDatensatzNummer": "Application data record number", "Allgemein-Parameter": "General parameters", "Mehrausstattung": "Optional equipment", "Mehrausstattungen": "Optional equipment", "Klemmensteuerung": "Terminal control", "Seriennummer": "Serial number", "digitale Stati": "Digital states", "Beleuchtung": "Lighting", "Uhrzeit #": "Time #", "Funktionscode #": "Function code #", "Memory IDs / Funk": "Memory IDs / radio", "Gurtschloss-Statusinformation": "Belt buckle status information", "Diagnosestatus Gurtschloss": "Diagnostic status, belt buckle", "Drehzahl letztes Auftreten": "Engine speed, last occurrence", "Drehzahl erstes Auftreten": "Engine speed, first occurrence", "Fahrzeuggeschwindigkeit": "Vehicle speed", "Geschwindigkeit letztes Auftreten": "Speed, last occurrence", "Geschwindigkeit erstes Auftreten": "Speed, first occurrence", "Innentemperatur": "Interior temperature", "Kuehlmiteltemperatur letztes Auftreten": "Coolant temperature, last occurrence", "Kuehlmitteltemperatur erstes Auftreten": "Coolant temperature, first occurrence", "Sonnenintensitaet": "Sun intensity", "StandardFreezeFrame letztes Auftreten": "StandardFreezeFrame, last occurrence", "interne Fehlerart": "Internal fault type", "interner Fehlercode": "Internal fault code", "Oeltemperatur erstes Auftreten": "Oil temperature, first occurrence", "Oeltemperatur letztes Auftreten": "Oil temperature, last occurrence", "Zeit seit Motorstart": "Time since engine start", "Bedienelement": "Operating element", "Betriebszustand": "Operating state", "Fahrzeugzustand": "Vehicle state", "Status Fahrzeuggeschwindigkeit": "Status vehicle speed", "Bremspedal": "Brake pedal", "Kupplungspedal": "Clutch pedal", "Status Aktuator Position links": "Status actuator position, left", "Status Aktuator Position rechts": "Status actuator position, right", "Aktuator-Verfuegbarkeit": "Actuator availability", "Anforderung Notbremsfunktion": "Request emergency brake function", "TUeV-Modus": "TUEV (inspection) mode", "Betriebsdauer": "Operating time", "Betriebsspannung": "Operating voltage", "Berechnete Fahrstufe": "Calculated gear", "Ereigniskategorie": "Event category", "Fehlerstatus der Hall-Sensoren": "Fault status of the Hall sensors", "Gesamtwegstreckenzaehler": "Total distance counter", "Hinweis_Prio": "Note_priority", "Zaehler Freischaltversuche": "Counter of unlock attempts", "Anzeige der der angelernten Komponenten": "Display of the learned components", "BC-Konfiguration Byte # Status oben": "BC configuration byte #, status top", "BC-Konfiguration Byte # Status unten": "BC configuration byte #, status bottom", "BC-Konfiguration Byte # Auto-MEM": "BC configuration byte #, Auto-MEM", "BC-Konfiguration Byte # Anzeige Speed Limit Navi": "BC configuration byte #, display speed limit navi", "BC-Konfiguration Byte # Tooltip Active": "BC configuration byte #, Tooltip Active", "BC-Konfiguration Byte # BC-Rolle Audio": "BC configuration byte #, BC role audio", "BC-Konfiguration Byte # BC-Rolle Navi": "BC configuration byte #, BC role navi", "BC-Konfiguration Byte # BC-Rolle Map": "BC configuration byte #, BC role map", "BC-Konfiguration Byte # BC-Rolle Telefon": "BC configuration byte #, BC role phone", "BC-Konfiguration Byte # BC-Rolle Allrad": "BC configuration byte #, BC role all-wheel drive", "BC-Konfiguration Byte # BC-Rolle Hybrid": "BC configuration byte #, BC role hybrid", "BC-Konfiguration Byte # BC-Rolle ACC": "BC configuration byte #, BC role ACC", "BC-Konfiguration Byte # BC-Rolle G-Force": "BC configuration byte #, BC role G-force", "BC-Konfiguration Byte # BC-Rolle Hochschaltanzeige": "BC configuration byte #, BC role upshift display", "BC-Konfiguration Byte # BC-Rolle VZA": "BC configuration byte #, BC role VZA (traffic sign display)", "BC-Konfiguration Byte # BC-Rolle Trip": "BC configuration byte #, BC role trip", "BC-Konfiguration Byte # BC-Rolle RDK": "BC configuration byte #, BC role RDK (tire pressure)", "BC-Konfiguration Byte # BC-Rolle Chrono": "BC configuration byte #, BC role chrono", "BC-Konfiguration Byte # BC-Rolle Performance-Anzeige": "BC configuration byte #, BC role performance display", "BC-Konfiguration Byte # Kartenanzeige": "BC configuration byte #, map display", "BC-Konfiguration Byte # Kartenorientierung": "BC configuration byte #, map orientation", "BC-Konfiguration Byte # PCM Anzeigen Kreuzungszoom": "BC configuration byte #, PCM displays intersection zoom", "BC-Konfiguration Byte # PCM Anzeigen Abbiegehinweise": "BC configuration byte #, PCM displays turn instructions", "BC-Konfiguration Byte # PCM Anzeigen Telefon-Info": "BC configuration byte #, PCM displays phone info", "BC-Konfiguration Byte # PCM Anzeigen Sprachbedien-Info": "BC configuration byte #, PCM displays voice control info", "BC-Konfiguration Byte # Eco-Hochschaltanzeige": "BC configuration byte #, eco upshift display", "BC-Konfiguration Byte # Aussenlicht Nachleuchtzeit": "BC configuration byte #, exterior light afterglow time", "BC-Konfiguration Byte # Innenlicht Orientierungslicht": "BC configuration byte #, interior light orientation light", "BC-Konfiguration Byte # Innenlicht Nachleuchtzeit": "BC configuration byte #, interior light afterglow time", "BC-Konfiguration Byte # Innenlicht an, wenn Tuerkontakt offen": "BC configuration byte #, interior light on when door contact open", "BC-Konfiguration Byte # Wischer Regensensor": "BC configuration byte #, wiper rain sensor", "BC-Konfiguration Byte # Wischer Heckwischer": "BC configuration byte #, wiper rear wiper", "BC-Konfiguration Byte # Rueckfahroptionen Spiegel Absenken": "BC configuration byte #, reversing options mirror tilt-down", "BC-Konfiguration Byte # Rueckfahroptionen Heckrollo oeffnen": "BC configuration byte #, reversing options rear blind open", "BC-Konfiguration Byte # Einstellung Tuerentriegelung": "BC configuration byte #, setting door unlocking", "BC-Konfiguration Byte # Einstellung Tuerverriegelung (CarJack)": "BC configuration byte #, setting door locking (CarJack)", "BC-Konfiguration Byte # Einstellung Klimastil": "BC configuration byte #, setting climate style", "BC-Konfiguration Byte # Verriegelung Spiegel Einklappen": "BC configuration byte #, locking mirror fold-in", "BC-Konfiguration Byte # Verriegelung Einstiegshilfe": "BC configuration byte #, locking entry aid", "BC-Konfiguration Byte # Verriegelung Wiederverriegelungszeit, Nach Tuerentriegelung": "BC configuration byte #, locking re-lock time after door unlocking", "BC-Konfiguration Byte # Verriegelung Wiederverriegelungszeit, Nach Kofferraum oeffnen": "BC configuration byte #, locking re-lock time after trunk opening", "BC-Konfiguration Byte # Klima Temperaturabsenkung Mittelduese": "BC configuration byte #, climate temperature reduction, center vent", "BC-Konfiguration Byte # Klima Erweitertes Belueftungsfeld": "BC configuration byte #, climate extended ventilation field", "BC-Konfiguration Byte # Klima Auto-Umluft": "BC configuration byte #, climate auto recirculation", "BC-Konfiguration Byte # Uhrzeitformat": "BC configuration byte #, time format", "BC-Konfiguration Byte # Datumsformat": "BC configuration byte #, date format", "BC-Konfiguration Byte # HAL_Schneekette": "BC configuration byte #, HAL_snow chain", "BC-Konfiguration Byte # GPS-Uhrzeit": "BC configuration byte #, GPS time", "BC-Konfiguration Byte # Performance-Anzeige": "BC configuration byte #, performance display", "BC-Konfiguration Byte # FLA/GLW-Funktion": "BC configuration byte #, FLA/GLW function", "BC-Konfiguration Byte # Anzeige Uhrzeit in Stoppuhr": "BC configuration byte #, display time in stopwatch", "BC-Konfiguration Byte # Einheit Tacho": "BC configuration byte #, unit speedometer", "BC-Konfiguration Byte # Einheit Temperatur": "BC configuration byte #, unit temperature", "BC-Konfiguration Byte # Einheit Reifendruck": "BC configuration byte #, unit tire pressure", "BC-Konfiguration Byte # Einheit Ladedruck": "BC configuration byte #, unit boost pressure", "BC-Konfiguration Byte # Einheit Oeldruck": "BC configuration byte #, unit oil pressure", "BC-Konfiguration Byte # Einheit Verbrauch": "BC configuration byte #, unit consumption", "BC-Konfiguration Byte # Sprache": "BC configuration byte #, language", "BC-Konfiguration Byte # Verkehrszeichen oben/rechts": "BC configuration byte #, traffic signs top/right", "BC-Konfiguration Byte # Bildschirm Helligkeit": "BC configuration byte #, screen brightness", "BC-Konfiguration Byte # Warntoene Parkassistent": "BC configuration byte #, warning tones park assist", "BC-Konfiguration Byte # Warntoene Systemtoene": "BC configuration byte #, warning tones system tones", "BC-Konfiguration Byte # Lenkrad Multifunktionstaste": "BC configuration byte #, steering wheel multifunction button", "BC-Konfiguration Byte # Lenkrad-Schaltanzeige (Schaltblitz)": "BC configuration byte #, steering wheel shift display (shift flash)", "BC-Konfiguration Byte # Autozoom": "BC configuration byte #, autozoom", "BC-Konfiguration Byte # Selected Trip Computer": "BC configuration byte #, Selected Trip Computer", "BC-Konfiguration Byte # Preset Liste": "BC configuration byte #, preset list", "BC-Konfiguration Byte # und # Fahrerdimmungswert": "BC configuration byte #, and #, driver dimming value", "BC-Konfiguration Byte # und # Car Connect Privacy": "BC configuration byte #, and #, Car Connect Privacy"}, "TRANS_PHRASE": {"und": "and", "oder": "or", "nicht": "not", "kein": "no", "keine": "no", "keiner": "none", "mit": "with", "ohne": "without", "fuer": "for", "von": "from", "vor": "before", "nach": "after", "bei": "at", "seit": "since", "zwischen": "between", "wegen": "due to", "durch": "by", "ueber": "via", "innerhalb": "within", "anzahl der": "number of", "als": "as", "beim": "at", "einmal": "once", "ausserhalb": "outside", "oberhalb": "above", "unterhalb": "below", "im": "in", "zum": "for", "zur": "for", "der": "of the", "des": "of the", "die": "the", "das": "the", "dem": "the", "den": "the", "ist": "is", "sind": "are", "war": "was", "wird": "is", "wenn": "when", "weil": "because", "nur": "only", "alle": "all", "beide": "both", "eine": "one", "ein": "on", "aus": "off", "aktuelle": "current", "aktuellen": "current", "aktueller": "current", "letzte": "last", "letzter": "last", "letzten": "last", "letztes": "last", "erste": "first", "erster": "first", "erstes": "first", "erstem": "first", "neu": "new", "alt": "old", "weitere": "further", "zuletzt": "most recently", "mindestens": "at least", "moeglich": "possible", "gleich": "equal", "manuell": "manually", "automatisch": "automatically", "links": "left", "rechts": "right", "oben": "top", "unten": "bottom", "vorne": "front", "vorn": "front", "hinten": "rear", "mitte": "center", "innen": "inside", "aussen": "outside", "hoch": "up", "vorwaerts": "forward", "rueckwaerts": "backward", "fahrerseite": "driver side", "beifahrerseite": "passenger side", "fahrer": "driver", "beifahrer": "passenger", "fond": "rear compartment", "lesen": "read", "gelesen": "read", "schreiben": "write", "loeschen": "clear", "geloescht": "cleared", "betaetigt": "pressed", "unbetaetigt": "not pressed", "gedrueckt": "pressed", "erkannt": "detected", "erfuellt": "fulfilled", "durchgefuehrt": "performed", "gesendet": "sent", "empfangen": "received", "empfangene": "received", "gespeichert": "stored", "gesp.": "stored", "angelernt": "learned", "angelernten": "learned", "unverbaut": "not installed", "aktiviert": "activated", "deaktiviert": "deactivated", "aktivieren": "activate", "deaktivierung": "deactivation", "aktivierung": "activation", "freigegeben": "released", "freigegebene": "released", "freigegebenen": "released", "gestoert": "disturbed", "fehlerhaft": "faulty", "gueltig": "valid", "ungueltig": "invalid", "zulaessig": "permissible", "zulaessigen": "permissible", "erlaubt": "permitted", "verbieten": "prohibit", "anfordern": "request", "geoeffnet": "opened", "geschlossen": "closed", "offen": "open", "oeffnen": "open", "schliessen": "close", "sperren": "lock", "entriegelt": "unlocked", "verriegelt": "locked", "einschalten": "switch-on", "abschalten": "switch-off", "eingeschaltet": "switched on", "ausgeschaltet": "switched off", "abgeschaltet": "switched off", "abgelaufen": "expired", "erfolgt": "done", "erfolgreich": "successful", "fehlgeschlagen": "failed", "laeuft": "running", "steht": "stopped", "schlaeft": "asleep", "wartet": "waiting", "pruefen": "check", "geprueft": "checked", "kalibriert": "calibrated", "normiert": "normalized", "invertiert": "inverted", "qualifiziert": "qualified", "quittiert": "acknowledged", "quittierbar": "acknowledgeable", "berechnete": "calculated", "berechnet": "calculated", "angezeigte": "displayed", "angezeigt": "displayed", "verfuegbar": "available", "vorhanden": "present", "belegt": "assigned", "aktiv": "active", "inaktiv": "inactive", "defekt": "defective", "leer": "empty", "voll": "full", "konsistent": "consistent", "fehler": "fault", "fehlers": "fault", "warnung": "warning", "warnungen": "warnings", "schluessel": "key", "tuer": "door", "tueren": "doors", "sitz": "seat", "rad": "wheel", "raeder": "wheels", "bremse": "brake", "batterie": "battery", "spannung": "voltage", "strom": "current", "druck": "pressure", "temperatur": "temperature", "geschwindigkeit": "speed", "drehzahl": "engine speed", "zaehler": "counter", "anzahl": "number of", "wert": "value", "werte": "values", "messwert": "measured value", "messwerte": "measured values", "sollwert": "target value", "istwert": "actual value", "sollposition": "target position", "istposition": "actual position", "kennlinie": "characteristic curve", "kennlinien": "characteristic curves", "kennfeld": "map", "schwelle": "threshold", "schwellen": "thresholds", "grenzwert": "limit value", "bereich": "range", "bereiches": "range", "zustand": "state", "zustaende": "states", "zeit": "time", "datum": "date", "uhrzeit": "time", "dauer": "duration", "zyklus": "cycle", "zyklen": "cycles", "kilometerstand": "odometer reading", "teil": "part", "grund": "reason", "gruende": "reasons", "eintrag": "entry", "eintraege": "entries", "eintrags": "entry", "liste": "list", "chronik": "history", "historie": "history", "speicher": "memory", "fehlerspeicher": "fault memory", "ereignis": "event", "ereignisse": "events", "ausloesung": "deployment", "ausloesungen": "deployments", "ansteuerung": "activation", "steuerung": "control", "regelung": "control", "ueberwachung": "monitoring", "diagnose": "diagnosis", "pruefung": "test", "pruefungen": "tests", "bedingung": "condition", "bedingungen": "conditions", "funktion": "function", "funktionen": "functions", "konfiguration": "configuration", "einstellung": "setting", "einstellungen": "settings", "parametrierung": "parameterization", "programmierung": "programming", "kodierung": "coding", "codierung": "coding", "codierungen": "codings", "kodierwert": "coding value", "kodierwerte": "coding values", "codierwert": "coding value", "variante": "variant", "varianten": "variants", "ausstattung": "equipment", "sensoren": "sensors", "signale": "signals", "botschaft": "message", "botschaftsfehler": "message fault", "klemme": "terminal", "sicherung": "fuse", "relais": "relay", "lampe": "lamp", "leuchte": "lamp", "licht": "light", "beleuchtung": "lighting", "helligkeit": "brightness", "blinker": "turn signal", "scheinwerfer": "headlight", "fernlicht": "high beam", "abblendlicht": "low beam", "standlicht": "standing light", "nebellicht": "fog light", "innenlicht": "interior light", "aussenlicht": "exterior light", "tagfahrlicht": "daytime running light", "umluft": "recirculation", "geblaese": "blower", "innengeblaese": "interior blower", "klima": "climate", "heizung": "heating", "lueftung": "ventilation", "mittelduese": "center vent", "spiegel": "mirror", "aussenspiegel": "exterior mirror", "wischer": "wiper", "heckwischer": "rear wiper", "wischwinkel": "wiper angle", "regensensor": "rain sensor", "drucksensor": "pressure sensor", "beschleunigungssensor": "acceleration sensor", "sensorwert": "sensor value", "sensorwerte": "sensor values", "gurt": "belt", "gurtstraffer": "belt tensioner", "gurtschloss": "belt buckle", "gurtschloesser": "belt buckles", "gurtwarnung": "belt warning", "insassenerkennung": "occupant detection", "fussgaengerschutz": "pedestrian protection", "ueberrollschutz": "rollover protection", "lenksaeule": "steering column", "lenkrad": "steering wheel", "lenkunterstuetzung": "steering assist", "lenkung": "steering", "fahrwerk": "chassis", "daempfer": "damper", "daempferstrom": "damper current", "vorderachse": "front axle", "hinterachse": "rear axle", "achse": "axis", "reifen": "tire", "reifendruck": "tire pressure", "reifentyp": "tire type", "reifenumfang": "tire circumference", "tankinhalt": "tank content", "tankanzeige": "fuel gauge", "tankgeber": "tank sender", "kraftstoff": "fuel", "verbrauch": "consumption", "reichweite": "range", "restreichweite": "remaining range", "oeldruck": "oil pressure", "oelstand": "oil level", "oeltemperatur": "oil temperature", "kuehlmittel": "coolant", "motoroel": "engine oil", "ladedruck": "boost pressure", "abgas": "exhaust", "katalysator": "catalytic converter", "lambdasonde": "oxygen sensor", "zuendung": "ignition", "zuendungen": "ignitions", "zuendkreis": "ignition circuit", "zuendpille": "squib", "zuendwinkel": "ignition angle", "klopfregelung": "knock control", "nockenwelle": "camshaft", "zylinder": "cylinder", "einspritzung": "injection", "leerlauf": "idle", "drosselklappe": "throttle valve", "kupplung": "clutch", "gang": "gear", "gaenge": "gears", "ganganzeige": "gear display", "schaltung": "shift", "schaltpunkte": "shift points", "waehlhebel": "selector lever", "fahrstufe": "gear", "allrad": "all-wheel drive", "quersperre": "differential lock", "motorstart": "engine start", "steuergeraet": "control unit", "steuergeraete": "control units", "steuergeraets": "control unit", "verdeck": "convertible top", "dach": "roof", "deckel": "lid", "heckklappe": "tailgate", "kofferraum": "trunk", "handschuhkasten": "glovebox", "fensterheber": "window lifter", "zentralverriegelung": "central locking", "verriegelung": "locking", "entriegelung": "unlocking", "tuerentriegelung": "door unlocking", "tuerverriegelung": "door locking", "tuerkontakt": "door contact", "einstiegshilfe": "entry aid", "zuziehhilfe": "soft-close assist", "diebstahlwarnanlage": "anti-theft alarm", "wegfahrsperre": "immobilizer", "funkschluessel": "radio key", "heckrollo": "rear blind", "sonnenrollo": "sun blind", "dachkonsole": "roof console", "anhaenger": "trailer", "fahrzeug": "vehicle", "fahrzeuge": "vehicles", "fahrzyklus": "driving cycle", "fahrt": "trip", "wegstrecke": "distance", "stillstand": "standstill", "kurve": "curve", "kurven": "curves", "kurvenlicht": "cornering light", "kurvenradius": "curve radius", "autobahnlicht": "highway light", "stadtlicht": "city light", "crashdaten": "crash data", "crashereignis": "crash event", "crashzaehler": "crash counter", "zeitstempel": "timestamp", "warnlampe": "warning lamp", "warnlampen": "warning lamps", "warntoene": "warning tones", "hinweis": "note", "anzeige": "display", "anzeigen": "displays", "analoganzeigen": "analog gauges", "bordcomputer": "on-board computer", "kombiinstrument": "instrument cluster", "tacho": "speedometer", "stoppuhr": "stopwatch", "sprache": "language", "einheit": "unit", "einheiten": "units", "taste": "button", "tasten": "buttons", "taster": "button", "tastenfeld": "keypad", "schalter": "switch", "betaetigung": "actuation", "betaetigungszeit": "actuation time", "verstellung": "adjustment", "verstellungen": "adjustments", "verstellweg": "adjustment travel", "hoehenverstellung": "height adjustment", "lordose": "lumbar", "lordosenverstellung": "lumbar adjustment", "sitzheizung": "seat heating", "kopfstuetze": "headrest", "armlehne": "armrest", "airbag": "airbag", "fahrerairbag": "driver airbag", "beifahrerairbag": "passenger airbag", "knieairbag": "knee airbag", "thoraxairbag": "thorax airbag", "seitenairbag": "side airbag", "kopfairbag": "head airbag", "generator": "alternator", "generatorfehler": "alternator fault", "anlasser": "starter", "starterrelais": "starter relay", "bordspannung": "on-board voltage", "bordnetz": "electrical system", "ruhestrom": "quiescent current", "ruhespannung": "quiescent voltage", "versorgungsspannung": "supply voltage", "batteriespannung": "battery voltage", "unterspannung": "undervoltage", "ueberspannung": "overvoltage", "spannungsversorgung": "power supply", "stromversorgung": "power supply", "kurzschluss": "short circuit", "unterbrechung": "open circuit", "masseschluss": "short to ground", "plusschluss": "short to plus", "leitungsbruch": "broken wire", "widerstand": "resistance", "widerstaende": "resistances", "kapazitaet": "capacity", "ladung": "charge", "entladung": "discharge", "fremdladung": "external charging", "energiebilanz": "energy balance", "abschaltung": "switch-off", "einschaltzeit": "switch-on time", "ausschaltzeit": "switch-off time", "nachleuchtzeit": "afterglow time", "verzoegerungszeit": "delay time", "rampenzeit": "ramp time", "wartezeit": "wait time", "laufzeit": "run time", "gesamtdauer": "total duration", "restlaufzeit": "remaining time", "histogramm": "histogram", "nr.": "no.", "stufe": "stage", "stufen": "stages", "position": "position", "positionen": "positions", "richtung": "direction", "winkel": "angle", "hebel": "lever", "pedal": "pedal", "bremspedal": "brake pedal", "kupplungspedal": "clutch pedal", "gaspedal": "accelerator pedal", "erkennung": "detection", "abgleich": "calibration", "kalibrierung": "calibration", "normierung": "normalization", "initialisierung": "initialization", "adaption": "adaptation", "anpassung": "adaptation", "geber": "sender", "geberrad": "sender wheel", "istwerte": "actual values", "sollwerte": "target values", "rohwert": "raw value", "mittelwert": "mean value", "maximalwert": "maximum value", "minimalwert": "minimum value", "endwert": "final value", "startwert": "start value", "zaehlerstand": "counter reading", "startversuche": "start attempts", "versuche": "attempts", "auftreten": "occurrence", "haeufigkeit": "frequency", "wiederholung": "repetition", "intervall": "interval", "periode": "period", "frequenz": "frequency", "phase": "phase", "amplitude": "amplitude", "pegel": "level", "stand": "level", "fuellstand": "fill level", "niveau": "level", "hoehe": "height", "hoehen": "heights", "hoehenwert": "height value", "hoehenwerte": "height values", "breite": "width", "laenge": "length", "abstand": "distance", "luftdruck": "air pressure", "luftguete": "air quality", "aussentemperatur": "outside temperature", "innentemperatur": "interior temperature", "umgebungstemperatur": "ambient temperature", "verdampfer": "evaporator", "kondensator": "condenser", "kompressor": "compressor", "kaeltemittel": "refrigerant", "ausblastemperatur": "outlet temperature", "temperaturabsenkung": "temperature reduction", "sonnenintensitaet": "sun intensity", "beleuchtungsstaerke": "illuminance", "leuchtdichte": "luminance", "dimmung": "dimming", "daemmerung": "twilight", "nacht": "night", "tag": "day", "monat": "month", "jahr": "year", "stunde": "hour", "minute": "minute", "sekunde": "second", "woche": "week", "heute": "today", "russland": "Russia", "suedafrika": "South Africa", "suedamerika": "South America", "nordamerika": "North America", "europa": "Europe", "kanada": "Canada", "mexiko": "Mexico", "brasilien": "Brazil", "australien": "Australia", "japan": "Japan", "china": "China", "tuerkei": "Turkey", "naher osten": "Middle East", "deutschland": "Germany", "frankreich": "France", "oesterreich": "Austria", "schweiz": "Switzerland", "spanien": "Spain", "italien": "Italy", "arabien": "Arabia", "kartendaten": "map data", "karte": "map", "navi": "navi", "telefon": "phone", "verkehrszeichen": "traffic signs", "zusatzschilder": "supplementary signs", "schilder": "signs", "einparkhilfe": "park assist", "parkassistent": "park assist", "rueckfahrkamera": "reversing camera", "rueckwaertsgang": "reverse gear", "standheizung": "auxiliary heating", "zuheizer": "auxiliary heater", "segeln": "coasting", "rekuperation": "recuperation", "verstaerker": "amplifier", "lautsprecher": "speaker", "mikrofon": "microphone", "antenne": "antenna", "empfaenger": "receiver", "sender": "sender", "wachhaltegruende": "keep-awake reasons", "aufwachgrund": "wake-up reason", "schlafbereitschaft": "sleep readiness", "schlafbereiter": "ready-to-sleep", "schlafbereit": "ready to sleep", "komfort": "comfort", "antrieb": "drivetrain", "eingangssignale": "input signals", "ausgangssignale": "output signals", "eingaenge": "inputs", "ausgaenge": "outputs", "eingang": "input", "ausgang": "output", "peripherie": "peripherals", "schnittstelle": "interface", "schnittstellen": "interfaces", "protokoll": "protocol", "datensatz": "data record", "datensaetze": "data records", "daten": "data", "seriennummer": "serial number", "teilenummer": "part number", "fahrgestellnummer": "VIN", "pruefsumme": "checksum", "kennung": "identifier", "identifikation": "identification", "softwarestand": "SW version", "hardwarestand": "HW version", "stueckliste": "parts list", "fertigungsdaten": "production data", "produktionsdatum": "production date", "herstellernummer": "manufacturer number", "werkseinstellung": "factory setting", "auslieferungszustand": "delivery state", "transportmodus": "transport mode", "servicemodus": "service mode", "notlauf": "limp mode", "ersatzwert": "substitute value", "ersatzmassnahme": "substitute measure", "ersatzmassnahmen": "substitute measures", "einschraenkung": "restriction", "einschraenkungen": "restrictions", "stoerung": "malfunction", "stoerungen": "malfunctions", "fehlerart": "fault type", "fehlercode": "fault code", "fehlerursache": "fault cause", "fehlerliste": "fault list", "fehlerbits": "fault bits", "fehlereintrag": "fault entry", "fehlerstatus": "fault status", "fehlererkennung": "fault detection", "fehlersymptom": "fault symptom", "analyse": "analysis", "auswertung": "evaluation", "bewertung": "evaluation", "statistik": "statistics", "stichprobe": "sample", "referenz": "reference", "toleranz": "tolerance", "offset": "offset", "faktor": "factor", "verhaeltnis": "ratio", "prozent": "percent", "anteil": "share", "summe": "sum", "differenz": "difference", "mittel": "medium", "maximal": "maximum", "minimal": "minimum", "max.": "max.", "min.": "min.", "gesamt": "total", "gesamte": "total", "teilweise": "partial", "vollstaendig": "complete", "unvollstaendig": "incomplete", "unbekannt": "unknown", "verstellklappen": "adjustment flaps", "temperaturmischklappe": "temperature mixing flap", "stellmotor": "servo motor", "schrittmotor": "stepper motor", "stellglied": "actuator", "aktuator": "actuator", "ventil": "valve", "pumpe": "pump", "kraftstoffpumpe": "fuel pump", "wasserpumpe": "water pump", "luefter": "fan", "kuehler": "radiator", "kuehlung": "cooling", "thermostat": "thermostat", "thermomodell": "thermal model", "stuetzstelle": "interpolation point", "stuetzstellen": "interpolation points", "gierrate": "yaw rate", "querbeschleunigung": "lateral acceleration", "laengsbeschleunigung": "longitudinal acceleration", "beschleunigung": "acceleration", "verzoegerung": "deceleration", "einfederung": "compression", "ausfederung": "rebound", "niveauregulierung": "level control", "schwenkempfindlichkeit": "swivel sensitivity", "schwenkwinkel": "swivel angle", "knickwinkel": "kink angle", "radwinkel": "wheel angle", "lenkwinkel": "steering angle", "lenkradwinkel": "steering wheel angle", "uebersetzung": "ratio", "uebertragungsfaktor": "transfer factor", "daempfung": "damping", "steifigkeit": "stiffness", "vorspannung": "preload", "grundeinstellung": "basic setting", "endanschlag": "end stop", "anschlag": "stop", "endlage": "end position", "mittellage": "center position", "nulllage": "zero position", "betriebsbereich": "operating range", "arbeitsbereich": "working range", "messbereich": "measuring range", "anzeigebereich": "display range", "wertebereich": "value range", "gurtschlossstatus": "belt buckle status", "sitzbelegung": "seat occupancy", "sitzposition": "seat position", "sitzlehne": "backrest", "rueckenlehne": "backrest", "verlernzaehler": "unlearn counter", "haeufigkeitszaehler": "frequency counter", "betriebsdauerzaehler": "operating time counter", "lastwechselzaehler": "load cycle counter", "wachhaltezaehler": "keep-awake counter", "startzaehler": "start counter", "stoppzaehler": "stop counter", "reset": "reset", "neustart": "restart", "wiederholrate": "repeat rate", "abtastrate": "sampling rate", "aufloesung": "resolution", "genauigkeit": "accuracy", "filterwert": "filter value", "filterzeit": "filter time", "glaettung": "smoothing", "glaettungszeitkonstante": "smoothing time constant", "zeitkonstante": "time constant", "hysterese": "hysteresis", "totzeit": "dead time", "ansprechzeit": "response time", "abfallzeit": "release time", "anzugszeit": "pull-in time", "schrittlaenge": "step length", "drehrichtung": "rotation direction", "laufrichtung": "running direction", "fahrtrichtung": "direction of travel", "kraft": "force", "moment": "torque", "drehmoment": "torque", "leistung": "power", "energie": "energy", "arbeit": "work", "wirkungsgrad": "efficiency", "verlust": "loss", "verluste": "losses", "gewicht": "weight", "masse": "mass", "beladung": "load", "zuladung": "payload", "volllast": "full load", "teillast": "partial load", "leerlaufdrehzahl": "idle speed", "solldrehzahl": "target speed", "istdrehzahl": "actual speed", "startdrehzahl": "starting speed", "grenzdrehzahl": "limit speed", "geschwindigkeitsschwelle": "speed threshold", "beschleunigungsschwelle": "acceleration threshold", "temperaturschwelle": "temperature threshold", "spannungsschwelle": "voltage threshold", "stromschwelle": "current threshold", "druckschwelle": "pressure threshold", "warnschwelle": "warning threshold", "abschaltschwelle": "switch-off threshold", "einschaltschwelle": "switch-on threshold", "stromflussdauer": "current flow duration", "diagnosestatus": "diagnostic status", "codierbyte": "coding byte", "kodierbyte": "coding byte", "aussenbeleuchtung": "exterior lighting", "komponenten": "components", "komponente": "component", "aktive": "active", "haube": "hood", "endbeschlaggurtstraffer": "belt end-fitting tensioner", "gurtkraftbegrenzer": "belt force limiter", "solldruckpaar": "target pressure pair", "solldruck": "target pressure", "standzeit": "standing time", "menuekonfiguration": "menu configuration", "zoll": "inch", "volumen": "volume", "stopp": "stop", "tachokennlinie": "speedometer characteristic", "drehmomentanzeige": "torque display", "leistungsanzeige": "power display", "analoge": "analog", "digitale": "digital", "fahrzeugcodierung": "vehicle coding", "fahrersitzpositionssensor": "driver seat position sensor", "beifahrersitzpositionssensor": "passenger seat position sensor", "codierstring": "coding string", "komfortdruck": "comfort pressure", "kombi": "cluster", "mehrausstattungen": "optional equipment", "mehrausstattung": "optional equipment", "klasse": "class", "allgemein": "general", "allgemeine": "general", "allgemeinen": "general", "allgemeiner": "general", "batterieabtrennung": "battery disconnection", "fahrzeit": "driving time", "begrenzungsfilter": "limiting filter", "erweiterte": "extended", "erweiterter": "extended", "erweitertes": "extended", "bitfeld": "bit field", "temperaturen": "temperatures", "sgprogrammierstatus": "ECU programming status", "radelektronik": "wheel electronics", "leitung": "line", "kundenverhalten": "customer behavior", "zuendkreiskodierung": "ignition circuit coding", "seitenscheibenrollo": "side window blind", "externe": "external", "externer": "external", "parkbremse": "parking brake", "fahrprogramm": "driving program", "gurtzubringer": "belt feeder", "pneumatikparameter": "pneumatic parameters", "softwareblock": "software block", "hardwareblock": "hardware block", "deaktivierungsschalter": "deactivation switch", "aussetzererkennung": "misfire detection", "maximale": "maximum", "maximaler": "maximum", "minimale": "minimum", "minimaler": "minimum", "rollo": "blind", "stellelemente": "actuators", "stellelement": "actuator", "kanal": "channel", "rippelqualitaet": "ripple quality", "algorithmus": "algorithm", "kurztest": "short test", "elektrische": "electric", "elektrisch": "electric", "elektrischer": "electric", "variantencodierung": "variant coding", "mittelkonsole": "center console", "steckdosen": "power outlets", "steckdose": "power outlet", "schaltzeit": "shift time", "kennfeldbereich": "map range", "getriebeposition": "transmission position", "kodiercontainer": "coding container", "schrittmotorverfahrgeschwindigkeit": "stepper motor travel speed", "fehlerindex": "fault index", "neutralgangsensor": "neutral gear sensor", "bilanz": "balance", "kontrollleuchten": "indicator lamps", "kontrollleuchte": "indicator lamp", "warnungsidentifikator": "warning identifier", "warnungszustand": "warning state", "testerkennung": "tester identification", "porscheteilenummer": "Porsche part number", "vorbedingungen": "preconditions", "vorbedingung": "precondition", "sitzbelegungserkennung": "seat occupancy detection", "klemmensteuerungs-parameter": "terminal control parameters", "aktivierbar": "activatable", "abschaltstufe": "shutdown stage", "standheizungsabschaltung": "auxiliary heating switch-off", "batteriestom": "battery current", "batteriestrom": "battery current", "batteriesaeure-temp": "battery acid temp", "applikationsoftwareversionszaehler": "application software version counter", "getriebe": "transmission", "obere": "upper", "oberer": "upper", "untere": "lower", "unterer": "lower", "mittlere": "middle", "targadach": "Targa roof", "sommer": "summer", "winter": "winter", "testerdatumkalibrierung": "tester date calibration", "testerkennungkodierung": "tester identification coding", "testerkennungkalibrierung": "tester identification calibration", "flashprogrammierung": "flash programming", "datensatzkennung": "data record identifier", "programmierungen": "programmings", "betaetigungen": "actuations", "heckleuchten": "rear lights", "heckleuchte": "rear light", "begrenzungslicht": "position light", "vorfeldbeleuchtung": "approach lighting", "ambientebeleuchtung": "ambient lighting", "tuerinnengriffbeleuchtung": "door inner handle lighting", "kindersicherung": "child lock", "verdecksteuerung": "convertible top control", "spiegelheizung": "mirror heating", "spiegelabsenkung": "mirror tilt-down", "positionsabspeicherung": "position storing", "spiegelanklappung": "mirror fold-in", "aussenspiegelheizung": "exterior mirror heating", "synchrone": "synchronous", "spiegelverstellung": "mirror adjustment", "leichtpanzer": "light armor", "schwerpanzer": "heavy armor", "sonderfahrzeug": "special vehicle", "crashentriegeln": "crash unlocking", "sitzmemory": "seat memory", "handschuhkastenverriegelung": "glovebox locking", "laendercodierung": "country coding", "fahrzeugparameter": "vehicle parameters", "umschaltung": "switchover", "sitzverstellung": "seat adjustment", "schloss": "lock", "bewegung": "movement", "geschwindigkeitssignal": "speed signal", "spiegelheizleistung": "mirror heating power", "produktionsmontage": "production assembly", "eingeschraenkter": "restricted", "eingeschraenkt": "restricted", "verstellmodus": "adjustment mode", "uebernahme": "takeover", "funkschluesselnummer": "radio key number", "funkschluesselmemorymodus": "radio key memory mode", "fahrberechtigung": "drive authorization", "akustische": "acoustic", "akustisch": "acoustic", "speicherung": "storing", "lenkerseite": "steering side", "tastenmemory": "button memory", "tuersteuergeraet": "door control unit", "kommunikationsanforderung": "communication request", "applikation": "application", "herstellerwerkskennzeichnung": "manufacturer plant code", "positionierung": "positioning", "rueckmeldung": "feedback", "sitzbreitenverstellung": "seat width adjustment", "lehnenbreitenverstellung": "backrest width adjustment", "sitztiefenverstellung": "seat depth adjustment", "sitztiefeverstellung": "seat depth adjustment", "laengsverstellung": "longitudinal adjustment", "neigungsverstellung": "tilt adjustment", "lehnenneigungsverstellung": "backrest tilt adjustment", "sitzlaengsverstellung": "seat longitudinal adjustment", "sitzhoehenverstellung": "seat height adjustment", "sitzneigungsverstellung": "seat tilt adjustment", "kopfstuetzenverstellung": "headrest adjustment", "lehnenkopfverstellung": "backrest head adjustment", "gurthoehenverstellung": "belt height adjustment", "memoryverstellung": "memory adjustment", "handverstellung": "manual adjustment", "lordosenhoehe": "lumbar height", "lordosenweite": "lumbar width", "sitzweite": "seat width", "lehnenbreite": "backrest width", "lehnenneigung": "backrest tilt", "softblockverstellzaehler": "soft block adjustment counter", "hardwareverfahrweg": "hardware travel", "verfahrgeschwindigkeit": "travel speed", "wecken": "wake", "groesser": "greater than", "entlueftung": "venting", "wartezeitbegrenzung": "wait time limit", "entfall": "omission", "positionsfahrt": "position travel", "positionsspeicherung": "position storing", "fernlichtanhebung": "high beam raising", "referenzierung": "referencing", "laenderkodierung": "country coding", "veraenderung": "change", "geschwindigkeitsgrenze": "speed limit", "welcher": "which", "immer": "always", "dynamisch": "dynamically", "regelt": "controls", "zurueck": "back", "panoramadach": "panoramic roof", "verdeckcodierungen": "roof coding", "verdeckcodierung": "roof coding", "ablagefixierung": "shelf securing mechanism", "tippbetrieb": "one-touch operation", "komfortfunktion": "comfort function", "fernbedienung": "remote control", "klappe": "flap", "klappen": "flaps", "betrieb": "operation", "stellung": "position", "modul": "module", "nummer": "number", "grossdach": "large roof", "hardtop": "hardtop", "baugruppe": "assembly", "netzwerkpowermgmt": "network power mgmt", "sollverbauliste": "target installation list", "istverbauliste": "actual installation list", "verbaut": "installed", "glasdach": "glass roof", "motortemperatur": "motor temperature", "kontrolleuchten": "indicator lamps", "digitaltacho": "digital speedometer", "hauptdisplay": "main display", "porschehardwareteilenummer": "Porsche hardware part number", "hardwareversionszaehler": "hardware version counter", "systemnameodermotortyp": "system name or motor type", "aktivediagnosesession": "active diagnostic session", "programmierbar": "programmable", "diagnostizierbar": "diagnosable", "diagnostizierbarkeit": "diagnosability", "baureihe": "model series", "produktionsmodus": "production mode", "produktionsnummer": "production number", "sensorcluster": "sensor cluster", "memorytaster": "memory button", "fehlerflag": "fault flag", "sperrklinke": "locking pawl", "systemfehler": "system fault", "treiber": "driver", "komponentenstatus": "component status", "rekuvorbedingungen": "recuperation preconditions", "ergebnisse": "results", "sporadische": "sporadic", "ausgabekennline": "output characteristic", "korrekturkennlinie": "correction characteristic", "freier": "free", "gross": "large", "spoilersteuerung": "spoiler control", "spoilerparameter": "spoiler parameters", "funk": "radio", "stecker": "connector", "warnton": "warning tone", "ventilhubverstellung": "valve lift adjustment", "batterieaberkennung": "battery rejection", "vetobedingungen": "veto conditions", "lenkwinkelsensor": "steering angle sensor", "dimmwert": "dimming value", "verschlusshaken": "locking hook", "fanghaken": "catch hook", "ansteuerzeit": "activation time", "kompass": "compass", "hydraulik": "hydraulics", "bautag": "build day", "druckreglerstrom": "pressure regulator current", "schluesselsuche": "key search", "lenkhilfe": "power steering", "schaerfephase": "arming phase", "motorlauf": "engine running", "detektionszeit": "detection time", "tastenbelegung": "button assignment", "aufschaltung": "activation", "kalibrierwerte": "calibration values", "lasterfassung": "load detection", "tastenentprellzeit": "button debounce time", "fahrerauswahl": "driver selection", "akustik": "acoustics", "codierdatum": "coding date", "blinken": "flashing", "lokaler": "local", "personen": "personal", "signalwert": "signal value", "gesendeter": "sent", "spitzenwert": "peak value", "anfahrstrom": "starting current", "zeitspanne": "time span", "steigung": "slope", "verringerung": "reduction", "routingtabelle": "routing table", "extern": "external", "abspeicherung": "storing", "reifendruckkontrolle": "tire pressure monitoring", "leistungselektronik": "power electronics", "busfehlermanager": "bus fault manager", "hauptwartung": "main service", "zwischenwartung": "interim service", "strecke": "distance", "nadelposition": "needle position", "ausfall": "failure", "tripdaten": "trip data", "passiv": "passive", "passivtaster": "passive button", "schiebedach": "sunroof", "spielschutz": "anti-play protection", "neues": "new", "datenobjekt": "data object", "kundendienst": "customer service", "plausibilisierung": "plausibility check", "schwellwert": "threshold value", "helligkeitsinfo": "brightness info", "fertigungsdatum": "production date", "mittlerer": "middle", "osten": "East", "satellitenskala": "satellite scale", "hauptskala": "main scale", "zeiger": "needles", "nachtankmethode": "refueling method", "niveausensor": "level sensor", "automatische": "automatic", "zielbremsung": "target braking", "nachlaufzeit": "afterrun time", "soll": "target", "sensorkodierung": "sensor coding", "messwertblock": "measured value block", "horizontale": "horizontal", "vertikale": "vertical", "durschnitt": "average", "durchschnitt": "average", "wegstreckespanne": "distance span", "plausi-zone": "plausibility zone", "hat": "has", "geantwortet": "responded", "ursache": "cause", "busse": "buses", "ausschalten": "switch off", "zielzeit": "target time", "zielleuchtdichten": "target luminances", "leuchtdichten": "luminances", "ausgabespannung": "output voltage", "mindesthelligkeit": "minimum brightness", "slavenummer": "slave number", "zulieferer": "supplier", "typ": "type", "verdeckmotor": "convertible top motor", "abschaltzeit": "switch-off time", "energiemanagement": "energy management", "bezogen": "referenced", "wann": "when", "ab": "from", "fuehrt": "leads", "steigende": "rising", "fallende": "falling", "hochdimmen": "dim-up", "auf": "at", "unbekannter": "unknown", "systemauswertung": "system evaluation", "innenraumueberwachung": "interior monitoring", "hochdruck": "high pressure", "niederdruck": "low pressure", "grad": "degrees", "optionen": "options", "sportmodus": "sport mode", "knotenadresse": "node address", "startstopp": "start-stop", "produktion": "production", "abstellzeit": "parking time", "abbiegelicht": "turning light", "hinterachslenkung": "rear axle steering", "ausgangsfilterkoeffizient": "output filter coefficient", "hochschaltpfeil": "upshift arrow", "menuepunkt": "menu item", "uebergaenge": "transitions", "harte": "hard", "codiert": "coded", "bis": "until", "orientierungslicht": "orientation light", "interner": "internal", "interne": "internal", "befuellphase": "fill phase", "entlueftphase": "vent phase", "startanforderung": "start request", "direkter": "direct", "hin": "out", "sperrungen": "locks", "fernlichtassistent": "high beam assistant", "aktivierungbits": "activation bits", "verfuegbarkeit": "availability", "restlaufanzeige": "remaining distance display", "pkw": "passenger car", "betaetigen": "actuate", "fahren": "driving", "aufbaubeschleunigung": "body acceleration", "ausgabe": "output", "passwort": "password", "leistungsreduzierung": "power reduction", "alarmeingang": "alarm input", "prio": "priority", "niedrig": "low", "poti": "potentiometer", "funktionsfreischaltung": "function enablement", "regen": "rain", "sprachbediensystem": "voice control system", "thermomanagement": "thermal management", "kamera": "camera", "ueberholverbot": "overtaking ban", "strommessung": "current measurement", "gesetzt": "set", "a-saeule": "A-pillar", "c-saeule": "C-pillar", "batterieabrissdauer": "battery disconnect duration", "eingriff": "intervention", "vorzeichen": "sign", "umschaltpunkt": "switchover point", "verfahrstrom": "travel current", "haltestrom": "holding current", "lichthupenposition": "headlight flash position", "failsafeposition": "failsafe position", "fahrdistanz": "driving distance", "sofortige": "immediate", "geradeausfahrt": "straight-ahead driving", "laendercode": "country code", "asien": "Asia", "pazifik": "Pacific", "produktionszeit": "production time", "walze": "roller", "befindet sich": "is", "generierung": "generation", "gelb": "yellow", "frei": "free", "waehlbar": "selectable", "bitte": "please", "temporaer": "temporarily", "ueberschritten": "exceeded", "belagwiderstand": "coating resistance", "uebertemperatur": "overtemperature", "empfangener": "received", "haengt": "stuck", "rueckfahrlicht": "reversing light", "entwicklungscodierungen": "development codings", "muss": "must", "ausgeloest": "triggered", "entsorgungszuendung": "disposal ignition", "entsorungszuendung": "disposal ignition", "heizen": "heating", "tonausgabedauer": "tone output duration", "tondauer": "tone duration", "touristenmodus": "tourist mode", "linksverkehr": "left-hand traffic", "rechtsverkehr": "right-hand traffic", "umgebung": "environment", "waschen": "washing", "programmierzustand": "programming state", "flaeche": "area", "schlusslicht": "tail light", "gesperrt": "locked", "nebelschlusslicht": "rear fog light", "verwendung": "usage", "batttempunterschreitung": "battery temp undershoot", "alarmzeit": "alarm time", "vorwarnung": "pre-warning", "anfang": "start", "wechselwirkung": "interaction", "korrekturfaktor": "correction factor", "seite": "side", "gasse": "gate", "korrekturwert": "correction value", "automatischer": "automatic", "einlassventil": "intake valve", "auslassventil": "exhaust valve", "lampen": "lamps", "gut": "good", "telegramme": "telegrams", "restlebensdauer": "remaining service life", "dauertonbereich": "continuous tone range", "tonparameter": "tone parameters", "schneelastfunktion": "snow load function", "ausfahrblockade": "extension blockage", "autoholdlampe": "auto-hold lamp", "warnruck": "warning jerk", "polaritaet": "polarity", "lager": "bearing", "linkes": "left", "rechtes": "right", "oelueberfuellungsanzeige": "oil overfill display", "geschwindigkerit": "speed", "aufhebungszeit": "cancellation time", "aufhebungszeichen": "cancellation sign", "dauerton": "continuous tone", "blockstrommessung": "blocking current measurement", "autobanhnlicht": "highway light", "eingebaut": "installed", "erreicht": "reached", "positioniersystem": "positioning system", "positioniersysteme": "positioning systems", "seitensatellit": "side satellite", "wiederverriegelung": "re-locking", "rueckschwenken": "swivel-back", "vorderachssensor": "front axle sensor", "hinterachssensor": "rear axle sensor", "lehnenneigungsverst": "backrest tilt adj", "sitzneigungsverst": "seat tilt adj", "sitzlaengsverst": "seat longitudinal adj", "sitzhoehenverst": "seat height adj", "sw-endanschlaege": "SW end stops", "lernstatus": "learning status", "grenzgeschwindigkeit": "limit speed", "eingelegt": "engaged", "basisschloss": "basic lock", "codierter": "coded", "rastenansteuerung": "detent activation", "heckscheibe": "rear window", "heizbare": "heatable", "nebelschlussleuchte": "rear fog lamp", "zweite": "second", "dritte": "third", "anfahren": "moving to", "ausstelllage": "tilt position", "ausstellen": "tilt out", "schiebebereich": "slide range", "automatik": "automatic", "ambientelicht": "ambient light", "korrekturfunktion": "correction function", "daemmglas": "insulating glass", "ruecklaufstop": "return stop", "werden": "be", "lehnenkopf": "backrest head", "widerstandskodiert": "resistance-coded", "stromkodiert": "current-coded", "ausblasfuehler": "outlet air sensor", "seitenduese": "side vent", "fussraum": "footwell", "kuehlen": "cooling", "entfernen": "remove", "nah": "near", "fern": "far", "schwergaengig": "stiff", "touristemmodusposition": "tourist mode position", "lichthupe": "headlight flash", "uebernommen": "adopted", "statische": "static", "waehrend": "during", "ausblendzeit": "fade-out time", "kurvensummandenstuetzstelle": "curve summand interpolation point", "zeitfenster": "time window", "klingellautstaerke": "ring volume", "radimpulszaehler": "wheel pulse counter", "impulszaehler": "pulse counter", "vornummer": "pre-number", "aktuatorversorgung": "actuator supply", "basisgroessen": "basic quantities", "tempomat": "cruise control", "magneten": "magnet", "unter": "below", "bandende": "end-of-line", "bandendekonfiguration": "end-of-line configuration", "kabelbaum": "wiring harness", "kabelbaumueberwachung": "wiring harness monitoring", "kabelbaumwiderstand": "wiring harness resistance", "logischer": "logical", "kalenderwoche": "calendar week", "steilheitsfaktor": "slope factor", "anzuzeigende": "displayed", "programmiervorbedingungen": "programming preconditions", "rueckrufaktion": "recall action", "einzeloeffnung": "single opening", "nachwischzyklen": "after-wipe cycles", "mindestanzeigezeit": "minimum display time", "statistische": "statistical", "geschwindigkeitsbeschraenkung": "speed restriction", "ueberhitzt": "overheated", "dauerhaft": "permanently", "druckabweichung": "pressure deviation", "sammelmeldung": "collective message", "servicestellung": "service position", "sicherheitslampe": "safety lamp", "menuebaum": "menu tree", "menuelaenge": "menu length", "menueabschnits": "menu section", "menuezeile": "menu line", "menuepfad": "menu path", "menue": "menu", "ungedaempfte": "undamped", "ungedaempft": "undamped", "gedaempft": "damped", "gedaempfte": "damped", "gedaempftes": "damped", "drehzahlfuehler": "speed sensor", "fuehler": "sensor", "luftspalt": "air gap", "luftspaltmonitoring": "air gap monitoring", "aktualitaet": "validity", "zeitangabe": "time indication", "systeminformation": "system information", "heck-wisch-waschprogramm": "rear wipe/wash program", "leselicht": "reading light", "abhaengige": "dependent", "abhaengig": "dependent", "abhaengiges": "dependent", "unabhaengige": "independent", "umschaltzeit": "switchover time", "kuehlmittelausgleichsbehaelter": "coolant expansion tank", "behaelter": "tank", "ruecklauf": "return", "laufende": "running", "luftverteilung": "air distribution", "belueftungsfeld": "ventilation field", "haltezeit": "hold time", "aenderung": "change", "aenderungen": "changes", "aenderungsdatum": "change date", "aenderungsfaktor": "change factor", "navigationssoftware": "navigation software", "sprachbedienung": "voice control", "handyvorbereitung": "phone preparation", "hoerer": "handset", "konvertierung": "conversion", "tankentlueftungssystem": "tank venting system", "tankentlueftungsventil": "tank venting valve", "verbleibende": "remaining", "verbleibender": "remaining", "verzoegerungszeitein": "switch-on delay time", "aufdimmgeschwindigkeit": "dim-up speed", "abdimmgeschwindigkeit": "dim-down speed", "batteriestatusberechnung": "battery status calculation", "berechnung": "calculation", "nachregelung": "readjustment", "klemmbedinung": "terminal operation", "startfaehigkeit": "starting capability", "batteriesaeure": "battery acid", "parklicht": "parking light", "versionzaehler": "version counter", "zifferblaetter": "dials", "reifengroesse": "tire size", "unkorrigiertes": "uncorrected", "unkorrigiert": "uncorrected", "korrigiert": "corrected", "ruecksetzdatum": "reset date", "ruecksetzen": "reset", "ruecksetzbedingung": "reset condition", "programmstand": "program version", "druckmessung": "pressure measurement", "hydraulischer": "hydraulic", "hydraulisches": "hydraulic", "bremsassistent": "brake assist", "vorbefuellung": "pre-fill", "vergleiche": "comparisons", "ausfuehrung": "execution", "rasten": "detent", "vorrasten": "pre-detent", "hauptrasten": "main detent", "rueckfahrscheinwerfer": "reversing headlight", "wertes": "value", "optische": "optical", "alarmausgabe": "alarm output", "zwangskopplung": "forced coupling", "sequenzieller": "sequential", "ablauf": "sequence", "speedabhaengige": "speed-dependent", "schalterbedienung": "switch operation", "fortfuehrung": "continuation", "blockierzeit": "blocking time", "pausenzeit": "pause time", "entnormiert": "denormalized", "timeoutwert": "timeout value", "rotordrehzahl": "rotor speed", "sortenschluessel": "variant key", "herstellerwerkskennzahl": "manufacturer plant code number", "schiebetuere": "sliding door", "reduzierte": "reduced", "blockzeit": "blocking time", "tuerinnengrifftaster": "door inner handle button", "tueraussengrifftaster": "door outer handle button", "neigungssensortaster": "tilt sensor button", "gegenueber": "opposite", "ungefilterte": "unfiltered", "funkchluesselverifikation": "radio key verification", "aktivitaet": "activity", "zulaesst": "permits", "laengsverst": "longitudinal adj", "laengverst": "longitudinal adj", "laengsversteller": "longitudinal adjuster", "neigungsverst": "tilt adj", "systembasischip": "system basis chip", "ueberlastet": "overloaded", "batterietrennung": "battery disconnection", "reserviert": "reserved", "fotosensorwert": "photosensor value", "steuerplatine": "control board", "laendervariante": "country variant", "stroeme": "currents", "sitzbelueftung": "seat ventilation", "entwicklungsbotschaften": "development messages", "anzeigebereitschaft": "display readiness", "abschaltgeschwindigkeit": "switch-off speed", "einschaltgeschwindigkeit": "switch-on speed", "annaehern": "approach", "annaeherung": "approach", "tonabschaltung": "tone switch-off", "beginn": "beginning", "aktivierungsberechnung": "activation calculation", "normalleistung": "normal power", "anbauhoehe": "mounting height", "wischerparkposition": "wiper park position", "achsensorfilterung": "axle sensor filtering", "gewichtungsfaktor": "weighting factor", "kurvenkruemmung": "curve curvature", "strassenaeusserer": "road-outer", "brenndauer": "burn time", "xenonbrenner": "xenon burner", "elektronische": "electronic", "klimaanlage": "air conditioning", "nachleuchtdauer": "afterglow duration", "integriertes": "integrated", "bluetoothmodul": "Bluetooth module", "entwicklung": "development", "sensorversorgung": "sensor supply", "versorgung": "supply", "rennstartzaehler": "race start counter", "kurzzeitmemory": "short-time memory", "trimmregelung": "trim control", "lambdasondenvertauschung": "oxygen sensor swap", "sekundaerluftsystem": "secondary air system", "kraftstoffversorgung": "fuel supply", "kommunikation": "communication", "lebensdauer": "service life", "anzulernender": "to-be-learned", "seitlich": "lateral", "einschaltdauer": "switch-on duration", "sprung": "jump", "folgenden": "following", "richtungsumkehr": "direction reversal", "drucktank": "pressure tank", "tankklappe": "fuel filler flap", "waschvorgaenge": "wash operations", "erstmaligen": "first", "gleitende": "sliding", "leuchtweite": "beam range", "eigenschaften": "properties", "blockzaehler": "block counter", "erweiterung": "extension", "alterung": "aging", "kodiert": "coded", "sichtbar": "visible", "koeffizient": "coefficient", "displayhelligkeitjustierung": "display brightness adjustment", "dimmungsstellknopf": "dimming knob", "stellknopf": "knob", "expertenmenue": "expert menu", "anzeigeberuhigung": "display smoothing", "wartungsintervall": "service interval", "zeitliches": "temporal", "zeitliche": "temporal", "oberes": "upper", "eintrittsschwelle": "entry threshold", "austrittsschwelle": "exit threshold", "tankberuhigungszeit": "tank settling time", "naesse": "wet conditions", "uebernehmen": "take over", "bestaetigen": "confirm", "ungueltiger": "invalid", "anfahrbefehl": "drive-off command", "stehendes": "stationary", "voraus": "ahead", "objekt": "object", "kuehlmitelstand": "coolant level", "kennzeichenbeleuchtung": "license plate light", "tagfagrlicht": "daytime running light", "bremsfluessigkeit": "brake fluid", "bremsfluessigkeitsstand": "brake fluid level", "parklichtwarnung": "parking light warning", "zuerst": "first", "drehen": "turn", "zuendungseinschaltversuch": "ignition switch-on attempt", "zweiter": "second", "loesen": "release", "verbraucherabschaltung": "consumer shutdown", "quiettierton": "acknowledge tone", "motorspuelgeblaese": "engine purge blower", "bremskraftverteilung": "brake force distribution", "solldruecke": "target pressures", "istdruecke": "actual pressures", "rundstrecke": "race track", "neue": "new", "navigationsdaten": "navigation data", "lifsteuerung": "lift control", "zusaetzliches": "additional", "anzeigesegment": "display segment", "qualitaet": "quality", "voreilung": "lead", "drehung": "rotation", "erhoehen": "increase", "kanaele": "channels", "verbundstand": "network level", "fuellzeichen": "fill character", "sensororientierung": "sensor orientation", "fahrsituation": "driving situation", "lenkmomentempfehlung": "steering torque recommendation", "rueckfoerderpumpe": "return pump", "initialisiert": "initialized", "initalisiert": "initialized", "abweichung": "deviation", "einschleifweg": "grinding-in distance", "mindestdruck": "minimum pressure", "hf-ueberdeckung": "RF coverage", "faehrt": "driving", "pinzustaende": "pin states", "karrosseriestecker": "body connector", "dbreduzierung": "dB reduction", "blockstromerkennung": "blocking current detection", "ansteuerpuls": "activation pulse", "frontwischzyklen": "front wipe cycles", "mindestbetaetigungszeit": "minimum actuation time", "lichtpack": "light package", "stahlgrossdach": "steel large roof", "lichtkomfortpaket": "light comfort package", "tuertafel": "door panel", "rampensteilheit": "ramp slope", "verzoegerte": "delayed", "synchronisation": "synchronization", "synchronisationsverlust": "synchronization loss", "kuehlwaserstandsschwelle": "cooling water level threshold", "ausfahrblockierung": "extension blocking", "einfahrblockierung": "retraction blocking", "lageueberwachung": "position monitoring", "bugspoiler": "front spoiler", "reversieren": "reversing", "dekrementierungszeit": "decrement time", "verfahrrichtung": "travel direction", "abdunkelungsgrad": "darkening level", "fahrphysikalischer": "driving physics", "momentenreduktion": "torque reduction", "querverbau": "cross installation", "abschalltung": "switch-off", "endstufe": "output stage", "anlernbedingung": "teach-in condition", "verletzt": "violated", "heligkeitsinfo": "brightness info", "aufmerksamkeitsherhoehung": "attention increase", "deaktiverungslampe": "deactivation lamp", "kodierungskompatibilitaet": "coding compatibility", "kindersitz": "child seat", "falsch": "incorrectly", "positioniert": "positioned", "stoersignal": "interference signal", "kindersitzerkennung": "child seat detection", "qualifizierter": "qualified", "gueltigkeit": "validity", "ersatzteilsteuergeraet": "spare part control unit", "fuehlerposition": "sensor position", "lenkstockspalt": "steering column gap", "gezielt": "specifically", "senden": "send", "vereisungsschutz": "icing protection", "unterdruckabschaltung": "vacuum switch-off", "unterdrucksystem": "vacuum system", "restzeit": "remaining time", "kompressoreinlaufphase": "compressor run-in phase", "benoetigte": "required", "bloecke": "blocks", "beendet": "finished", "fussraumausstroemer": "footwell vent", "personenausstroemer": "person vent", "defrostausstroemer": "defrost vent", "maximalzeitueberschreitung": "maximum time exceedance", "motormindestlaufzeit": "engine minimum run time", "stopsperre": "stop inhibit", "ursprungsbedatung": "original data set", "handschaltung": "manual shift", "erstwarntondauer": "first warning tone duration", "einschaltzueklen": "switch-on cycles", "anfangsgespraechslautstaerke": "initial call volume", "lautstaerkebegrenzung": "volume limit", "lautstaerke": "volume", "einstellbarkeit": "adjustability", "kaelter": "colder", "kartendarstellung": "map display", "fahrtenbuchmenueanzeigezeit": "logbook menu display time", "fahrtenbuchmenue": "logbook menu", "unprogrammiert": "unprogrammed", "geraeteadresse": "device address", "softwarestandsbezeichnung": "software version designation", "musterstand": "sample level", "schaltgeraet": "shift device", "anforderung": "request", "tastung": "keying", "bremsinformation": "brake information", "fahrgeschwindigkeitsregler": "cruise control", "wunschdrehzahl": "desired speed", "drehzahllimitierung": "speed limiting", "drehzahlregler": "speed controller", "drehzahllimit": "speed limit", "kuehlwasserabsperrventil": "cooling water shutoff valve", "plausibilisierte": "plausibility-checked", "abtriebsdrehzahl": "output speed", "funktionalitaet": "functionality", "geschwindigkeitsregelanlage": "cruise control system", "reinigungsanlage": "cleaning system", "belegung": "assignment", "jokertaste": "joker button", "haengender": "stuck", "lenkstockschalter": "steering column switch", "tipzeit": "tip time", "beschleunigen": "accelerate", "verzoegern": "decelerate", "defaultwert": "default value", "helligkeitsreglung": "brightness control", "uebergang": "transition", "geraeuschtypisierung": "noise typing", "navigationssystem": "navigation system", "wartungsdienste": "maintenance services", "typisierungsnummer": "typing number", "garagentoroeffner": "garage door opener", "lebenszustand": "life state", "identitaetszaehler": "identity counter", "markenkennung": "brand identifier", "schluesselanlernen": "key teach-in", "authentifizierbar": "authenticatable", "verriegelungsmodes": "locking modes", "entriegelungsmode": "unlocking mode", "doppelbetaetigungszeit": "double actuation time", "bedieneinheiten": "operating units", "unterscheidung": "distinction", "lang": "long", "kurz": "short", "ausschaltschaltzeit": "switch-off time", "veriegelungsphase": "locking phase", "halogenabblendlicht": "halogen low beam", "mindesteinschaltdauer": "minimum on duration", "hebelarmlaenge": "lever arm length", "einschaltverzoegerung": "switch-on delay", "ausstelldach": "pop-up roof", "schiebe": "sliding", "autobahnfahrlicht": "highway driving light", "seitenmarkierungsleuchten": "side marker lights", "umschaltblende": "switchover bezel", "blende": "bezel", "zusatzfernlicht": "auxiliary high beam", "scheinwerferdiebstahlueberwachung": "headlight theft monitoring", "oeffnet": "opens", "akustischer": "acoustic", "verriegeln": "locking", "beruecksichtigen": "consider", "blockierter": "blocked", "entriegelungsversuch": "unlocking attempt", "verriegelungsanforderung": "locking request", "nachfuehrung": "tracking", "querversatz": "lateral offset", "tastenentprellpruefungen": "button debounce checks", "sendezeit": "transmit time", "timeoutzeit": "timeout time", "messungen": "measurements", "wischstufenrueckschaltung": "wiper stage downshift", "traenenfunktion": "tear-wipe function", "tip-wischen": "tip wiping", "auswerten": "evaluate", "wischeranforderung": "wiper request", "sofort": "immediately", "wirksam": "effective", "wendelage": "reversal position", "tastender": "momentary", "zwischenstellung": "intermediate position", "bedienung": "operation", "sendeeinheit": "transmit unit", "empfangsfrequenz": "receive frequency", "nullstellung": "zero position", "dunkelheit": "darkness", "aktuell": "current", "auslastung": "utilization", "generatorauslastung": "alternator utilization", "batterieregeneration": "battery regeneration", "standheizungstimer": "auxiliary heating timer", "generatorgroesse": "alternator size", "reglergeneration": "regulator generation", "geschwindigkeitslimit": "speed limit", "luftstroemung": "air flow", "schaltempfehlung": "shift recommendation", "wunschgeschwindigkeit": "desired speed", "skalenbeleuchtung": "scale illumination", "autorepeatgeschwindigkeit": "autorepeat speed", "ganginformation": "gear information", "darstellung": "representation", "uebertragen": "transferred", "restliche": "remaining", "zeichen": "signs", "animierter": "animated", "startbildschirm": "start screen", "berechnungslogik": "calculation logic", "anzeigbar": "displayable", "skalierung": "scaling", "erhoehtes": "increased", "uhrzeitsynchronisation": "time synchronization", "theoretisches": "theoretical", "nachtankvolumen": "refuel volume", "plausibilitaetsvolumen": "plausibility volume", "plausibiltaetsvolumen": "plausibility volume", "displaykontrollerspannung": "display controller voltage", "tankfuellstand": "tank fill level", "selektierte": "selected", "tankkorrekturwert": "tank correction value", "dimmtastenwert": "dim button value", "rueckstelltopf": "reset counter", "litermenge": "liter quantity", "menge": "quantity", "antwortendes": "responding", "entnehmbare": "extractable", "sendemode": "transmit mode", "bedienhoerer": "handset", "hexwert": "hex value", "indikation": "indication", "bitwerte": "bit values", "hauptsicherungsbox": "main fuse box", "verbrauchsguenstiger": "fuel-efficient", "waehlbarer": "selectable", "in ordnung": "OK", "saeureschichtung": "acid stratification", "haendlernummer": "dealer number", "bargraf": "bar graph", "wie": "how", "schnell": "quickly", "langsam": "slowly", "herunterdimmt": "dims down", "runterdimmt": "dims down", "heraufdimmt": "dims up", "hochdimmt": "dims up", "dimmt": "dims", "abdimmen": "dim-down", "dimmen": "dimming", "automatish": "automatically", "null": "zero", "zu hoher": "too high", "zu hohe": "too high", "zu hoch": "too high", "zu niedriger": "too low", "zu niedrige": "too low", "zu niedrig": "too low", "an sind": "are on", "haelt an": "is stopping", "hoher": "high", "hell": "bright", "dunkel": "dark", "heiss": "hot", "kalt": "cold", "heller": "brighter", "dunkler": "darker", "weiss": "white", "weisse": "white", "roter": "red", "rote": "red", "gelbe": "yellow", "weich": "soft", "weiche": "soft", "hart": "hard", "klein": "small", "kleine": "small", "kurze": "short", "noch": "still", "sich": "itself", "eines": "of a", "jedem": "every", "aller": "all", "mehrere": "multiple", "mehrfache": "multiple", "sein": "be", "gilt": "is considered", "stabil": "stable", "momentan": "currently", "sonstige": "other", "feste": "fixed", "aktiver": "active", "aktivem": "active", "relativer": "relative", "absolutes": "absolute", "absolut": "absolute", "konsekutiv": "consecutive", "seriell": "serial", "resistiv": "resistive", "asynchron": "asynchronous", "plausibel": "plausible", "indirekter": "indirect", "globales": "global", "selektives": "selective", "generelle": "general", "zentrales": "central", "letztem": "last", "letzt": "last", "lokal": "local", "intern": "internal", "vom": "from the", "gelernt": "learned", "angelernter": "learned", "angefragt": "queried", "deaktivieren": "deactivate", "setzen": "set", "heben": "lift", "senken": "lower", "hebt": "raising", "senkt": "lowering", "abgesenkt": "lowered", "eingefahren": "retracted", "ausgefahren": "extended", "ausfahren": "extend", "einfahren": "retract", "aufgehoben": "cancelled", "reduzieren": "reduce", "reinigen": "clean", "abschliessen": "lock", "entlasten": "relieve", "benutzen": "use", "nachladen": "recharge", "sichern": "secure", "bringen": "put", "starten": "start", "startet": "starts", "lernt": "learning", "aufsuchen": "visit", "ablegen": "stow", "aufgestellt": "raised", "abgelegt": "stowed", "angehoben": "raised", "angeklappt": "folded in", "blinkt": "flashing", "gesteckt": "latched", "steckt": "inserted", "anhalten": "stop", "zulassen": "permit", "verloren": "lost", "gelockt": "locked", "auslesen": "read out", "unterschritten": "below minimum", "gefiltert": "filtered", "begrenzt": "limited", "begrenztes": "limited", "brauchen": "need", "lief": "ran", "bekannt": "known", "runter": "down", "gefahrene": "driven", "geradeaus": "straight ahead", "schwenken": "swivel", "funktionsbereit": "operational", "tankleckdiagnose": "tank leak diagnosis", "feinstleck": "very fine leak", "dcdcwandler": "DC/DC converter", "energiedurchsatz": "energy throughput", "gesamtenergiedurchsatz": "total energy throughput", "segmentnummer": "segment number", "vorhalt": "lead", "windschott": "wind deflector", "modi": "modes", "verfahrdistanz": "travel distance", "referenezlauf": "reference run", "kammer": "chamber", "batterietechnologie": "battery technology", "technologie": "technology", "batteriemanagementsg": "battery management ECU", "soundparameter": "sound parameters", "laut": "loud", "leise": "quiet", "scharf": "armed", "eingabe": "input", "targaklappe": "Targa flap", "argentinien": "Argentina", "selbsttest": "self-test", "ausbeute": "yield", "thermoschutz": "thermal protection", "lordosenblase": "lumbar air bladder", "selbstlauf": "self-run", "seiten": "side", "schrittverlustkorrektur": "step loss correction", "schrittverluste": "step losses", "nachrichtengruppen": "message groups", "funktionenkatalog": "function catalog", "crashart": "crash type", "ende": "end", "farbe": "color", "nachtanken": "refueling", "nebelscheinwerfer": "front fog light", "seitenmarker": "side marker", "komplement": "complement", "karosserie": "body", "karosserietyp": "body type", "notbremsfunktion": "emergency brake function", "softwaredatum": "software date", "ausstiegsleuchte": "exit lamp", "empfang": "reception", "spoilerinfo": "spoiler info", "drehstabmoment": "torsion bar torque", "anlernvorgang": "teach-in process", "anlernen": "teach-in", "deaktiv": "deactivated", "weit": "far", "achssensor": "axle sensor", "fahrtenbuch": "logbook", "anschluss": "connection", "transportprotokoll": "transport protocol", "kunde": "customer", "magnetventil": "solenoid valve", "ausschaltschwelle": "switch-off threshold", "programm": "program", "werkstatt": "workshop", "tankdeckel": "fuel cap", "wechsler": "changer", "programmierdatum": "programming date", "ja": "yes", "fahrten": "trips", "datensatzname": "data record name", "kontainername": "container name", "land": "country", "umschaltventil": "switchover valve", "einschleifen": "grinding-in", "einschleifstatus": "grinding-in status", "einschleifmodus": "grinding-in mode", "luftspiel": "air clearance", "windabweiser": "wind deflector", "kennzeichenleuchte": "license plate lamp", "absenken": "lower", "handschuhfach": "glovebox", "offenem": "open", "schiebelage": "slide position", "zug": "pull", "wegfall": "omission", "gleichstromfrei": "DC-free", "verschluss": "latch", "verschlussmotor": "latch motor", "adresse": "address", "verhalten": "behavior", "vorfeldleuchte": "approach lamp", "kurzhub": "short stroke", "vorabkurzhub": "preliminary short stroke", "einklemmschutz": "anti-trap protection", "klappfunktion": "fold function", "vernetzter": "networked", "heiztrigger": "heating trigger", "sportwagenfunktion": "sports car function", "mehrfachblock": "multiple block", "locktaster": "lock button", "unlocktaster": "unlock button", "tankdeckeltaster": "fuel cap button", "eindrahtfehler": "single-wire fault", "notaus": "emergency stop", "spiegelauswahl": "mirror selection", "rippel": "ripple", "blockstrom": "blocking current", "drehfalle": "rotary latch", "drehfallenschloss": "rotary latch lock", "zuziehen": "soft-close", "zuziehilfe": "soft-close aid", "stromaufnahme": "current draw", "hallsensor": "Hall sensor", "sportschalensitz": "sport bucket seat", "memorykonzept": "memory concept", "softblock": "soft block", "blase": "air bladder", "hardwarefahrweg": "hardware travel", "hardwareverfahweg": "hardware travel", "throaxairbag": "thorax airbag", "frontplatine": "front board", "lenkervariante": "steering variant", "luftfeder": "air spring", "stauluftklappe": "ram air flap", "defrostklappe": "defrost flap", "innenraum": "interior", "wegimpulse": "distance pulses", "fehleraktion": "fault action", "stillsatnd": "standstill", "inkativ": "inactive", "startmodus": "start mode", "strasseninnerer": "road-inner", "stati": "states", "masterbestellnummer": "master order number", "verbund": "network", "eingangswelle": "input shaft", "fehlerpfade": "fault paths", "programmierversuche": "programming attempts", "dynamik": "dynamics", "ventilhub": "valve lift", "ventilhubsystem": "valve lift system", "alarmphase": "alarm phase", "crashblinken": "crash flashing", "tippblinken": "tip flashing", "abschalttemperatur": "switch-off temperature", "fenster": "window", "fenstern": "windows", "fondscheibe": "rear side window", "fondscheiben": "rear side windows", "abparken": "parking", "kryptologie": "cryptology", "tabelle": "table", "steckplatz": "slot", "auswahl": "selection", "nachziehen": "trailing", "farbumschlag": "color change", "durchschnittspuffers": "averaging buffer", "nachtankschwelle": "refuel threshold", "schritten": "steps", "leeres": "empty", "zusatzzeichen": "supplementary sign", "inhalte": "contents", "inhalt": "content", "rechtsabbieger": "right turns", "linksabbieger": "left turns", "bremsanlage": "brake system", "tankreserve": "fuel reserve", "sensorsicht": "sensor view", "bremsbelag": "brake pad", "bremsbelagverschleiss": "brake pad wear", "fzg": "vehicle", "komplettausfall": "complete failure", "wandler": "converter", "warmlauf": "warm-up", "servicehinweis": "service note", "rennstart": "race start", "rollenmodus": "dyno mode", "positionslose": "positionless", "einsatzgebiet": "coverage area", "mechanik": "mechanics", "diebstahlversuch": "theft attempt", "notruf": "emergency call", "codeeingabe": "code entry", "negativ": "negative", "materialindex": "material index", "parametersatzindex": "parameter set index", "parametersatzversion": "parameter set version", "kalibriervorgang": "calibration process", "modell": "model", "hinterrachse": "rear axle", "anfahrwunsch": "drive-off request", "weckgrund": "wake reason", "realer": "real", "routinen": "routines", "heckspoiler": "rear spoiler", "verdeckverschluss": "convertible top latch", "schlussleuchten": "tail lamps", "alarmsirene": "alarm siren", "bruchsensor": "breakage sensor", "alarmkontakten": "alarm contacts", "alarmzyklen": "alarm cycles", "alarmpause": "alarm pause", "alarme": "alarms", "motorraumtemperatur": "engine bay temperature", "einfahrschwelle": "retraction threshold", "hardwarediagnose": "hardware diagnosis", "aufstell": "tilt-out", "tastbetrieb": "momentary operation", "aufnahme": "receptacle", "kodierswitch": "coding switch", "antriebsart": "drive type", "hauptcontroller": "main controller", "safingcontroller": "safing controller", "sitzplatz": "seat place", "unbestimmter": "undetermined", "glasvariante": "glass variant", "codierreferenz": "coding reference", "konzept": "concept", "ansaugtemperatur": "intake temperature", "spannngsfehler": "voltage fault", "aussententemperatur": "outside temperature", "hub": "lift", "hyterese": "hysteresis", "erstwarnton": "first warning tone", "brenner": "burner", "farbcode": "color code", "ladeschalen": "charging cradles", "ladeschale": "charging cradle", "multifunktionslenkrad": "multifunction steering wheel", "multifunktionstaste": "multifunction button", "klimaprofil": "climate profile", "almanache": "almanacs", "videosignal": "video signal", "softwaretyp": "software type", "sachnummer": "item number", "fremdnummer": "external number", "textform": "text form", "kickdownschalter": "kickdown switch", "getriebesumpftemperatur": "transmission sump temperature", "istgang": "actual gear", "tiptronik": "Tiptronic", "signalhorn": "horn", "diskret": "discrete", "minuterie": "courtesy timer", "hundertstel": "hundredths", "bestelltyp": "order type", "kraftstoffmarkt": "fuel market", "verbauvorschrift": "installation rule", "verdeckfarbe": "convertible top color", "wagen": "car", "einlassnockenwelle": "intake camshaft", "startzyklen": "start cycles", "hellgrenze": "bright threshold", "dunkelgrenze": "dark threshold", "tippblinkzyklen": "tip flash cycles", "blinkpause": "flash pause", "gegenseite": "opposite side", "fehlalarme": "false alarms", "mitblinkend": "co-flashing", "vorschrift": "regulation", "motortstart": "engine start", "selekt": "select", "anfahrschlag": "start impact", "telegramm": "telegram", "autoparken": "auto-parking", "ausspuren": "disengage", "startwiederholsperre": "start repeat inhibit", "puffer": "buffer", "rauschen": "noise", "kompletter": "complete", "programmierfehler": "programming error", "programmierschritt": "programming step", "handbremsschalter": "handbrake switch", "datenpuffer": "data buffer", "feuchte": "humidity", "scannercode": "scanner code", "motorwiederstart": "engine restart", "wiedergabe": "playback", "fahrzeugauftrag": "vehicle order", "segel": "coasting", "diskrepanz": "discrepancy", "generatorhersteller": "alternator manufacturer", "spiegelabsenken": "mirror tilt-down", "hupe": "horn", "dienste": "services", "golfstaaten": "Gulf states", "tankauswahl": "tank selection", "tempostat": "cruise control", "tempostatanzeige": "cruise control display", "zifferblatt": "dial", "trennlinie": "separator line", "balkendiagramm": "bar chart", "schrittweite": "step width", "verschleissindex": "wear index", "lasche": "tab", "tempolimit": "speed limit", "abbruch": "abort", "fototransistor": "phototransistor", "grafik": "graphics", "wahlhebel": "selector lever", "tankmodul": "tank module", "konstante": "constant", "leiterplattetemperatur": "circuit board temperature", "netzwerk": "network", "momentanverbrauch": "instantaneous consumption", "ohmscher": "ohmic", "zonen": "zones", "anwendung": "application", "sicher": "reliably", "zelle": "cell", "zell": "cell", "ringspeicher": "ring buffer", "verhinderter": "prevented", "verhindert": "prevented", "stoppvorgaenge": "stop operations", "stoppvorgang": "stop operation", "startvorgaenge": "start operations", "startvorgang": "start operation", "fehlerbitmaske": "fault bit mask", "kodierdaten": "coding data", "angeforderter": "requested", "angeforderte": "requested", "batteriebilanzierung": "battery balancing", "energiebilanzierung": "energy balancing", "bilanzierung": "balancing", "nutzdaten": "payload data", "beteiligte": "participating", "feldstaerkemessung": "field strength measurement", "feldstaerke": "field strength", "feldstaerken": "field strengths", "schaltspielzaehler": "shift cycle counter", "startstopanforderungscode": "start-stop request code", "identifizierte": "identified", "rohkodierung": "raw coding", "schreibfreigabe": "write release", "einselne": "individual", "einzelne": "individual", "sonst": "other", "gefunden": "found", "kennline": "characteristic", "sollverbau": "target installation", "istverbau": "actual installation", "verbauzustand": "installation state", "datensatzdownload": "data set download", "testerdatumdatensatzdownload": "tester date data set download", "testerkennungdatensatzdownload": "tester identification data set download", "gespiegeltes": "mirrored", "getastet": "keyed", "verwendet": "used", "checksumme": "checksum", "regler": "controller", "regelbedarf": "control demand", "fuss": "foot", "ton": "tone", "toene": "tones", "normalsignal": "normal signal", "normiersignal": "normalization signal", "quittierungssignal": "acknowledge signal", "naeherungssensoren": "proximity sensors", "naeherungssensor": "proximity sensor", "naeherungssensorik": "proximity sensors", "codierzelle": "coding cell", "codierstelle": "coding location", "betriebssstatus": "operating status", "guete": "quality", "geschaetzte": "estimated", "speicherbefuelltest": "accumulator fill test", "speicherbefuelltests": "accumulator fill test", "lastkollektiv": "load collective", "hebebuehne": "vehicle lift", "beschlagsneigung": "fogging tendency", "standardwert": "standard value", "maske": "mask", "versionskennungen": "version identifiers", "versionsnummer": "version number", "parameterblockversion": "parameter block version", "knopfdruck": "button press", "systembedingt": "system-related", "sendet": "sends", "bedienteil": "control panel", "bedienteile": "control panels", "bedieninterface": "operating interface", "bedienmodi": "operating modes", "assistenzsysteme": "assistance systems", "verschleissintegrator": "wear integrator", "lamellen": "clutch plates", "lamellenarbeit": "clutch plate work", "kodier": "coding", "schliesstaster": "close button", "multimediasystem": "multimedia system", "uebersprechantenne": "crosstalk antenna", "uebersprechoffset": "crosstalk offset", "logik": "logic", "tiefniveau": "low level", "normalniveau": "normal level", "extremniveau": "extreme level", "niveaulage": "level position", "niveauregler": "level controller", "niveauaktuatorik": "level actuators", "anpasskanal": "adaptation channel", "anpasswert": "adaptation value", "umweltbedingungen": "environmental conditions", "einzelradgeschwindigkeit": "individual wheel speed", "undefiniert": "undefined", "zentrale": "central", "drehzahlgradient": "engine speed gradient", "resonanzfrequenz": "resonance frequency", "resonanzfrequenzen": "resonance frequencies", "essentielle": "essential", "verkabelung": "wiring", "sensorik": "sensors", "abstaende": "distances", "intervalltonbereich": "interval tone range", "sensorleiste": "sensor strip", "einklemmleiste": "anti-trap strip", "einklemmleisten": "anti-trap strips", "schaltleiste": "switch strip", "synchron": "synchronous", "synchronisierung": "synchronization", "authentikationsstatus": "authentication status", "spurverlassenswarnung": "lane departure warning", "spurwechselassistent": "lane change assist", "spurhalteassistent": "lane keeping assist", "servicedaten": "service data", "wartung": "service", "stahlfeder": "steel spring", "stahlfederung": "steel suspension", "justagezeitpunkt": "adjustment time", "dejustagewinkel": "misalignment angle", "zuruecksetzen": "reset", "dejustageerkennung": "misalignment detection", "ladegeaet": "charger", "ladegeraet": "charger", "wachhalten": "keep awake", "konditionierung": "conditioning", "gewaehlt": "selected", "ausgewaehlt": "selected", "ueberwachte": "monitored", "lehne": "backrest", "mechanischer": "mechanical", "unterdruckpumpe": "vacuum pump", "unterdruck": "vacuum", "unterdrucksensor": "vacuum sensor", "gespannstabilisierung": "trailer stabilization", "neuer": "new", "lenkuebersetzung": "steering ratio", "kopf": "head", "personenanstroemer": "person vent", "sportfunktion": "sport function", "sportabgasanlage": "sport exhaust system", "chipkartenleser": "chip card reader", "verkehrsdaten": "traffic data", "verkehrsinfo": "traffic info", "verkehrsart": "traffic type", "datenbank": "database", "lautstaerkeregler": "volume controller", "tiefe": "depth", "trennelement": "separating element", "geschwindingkeit": "speed", "neigungssensor": "tilt sensor", "gengstellersensor": "gear actuator sensor", "gangsteller": "gear actuator", "gangstellehaltdruck": "gear position holding pressure", "erwartungsfenster": "expectation window", "kompassgeraet": "compass unit", "schalttafel": "instrument panel", "uhr": "clock", "analog-uhr": "analog clock", "reifenpanne": "flat tire", "sensoreinbau": "sensor installation", "sensoreneinbaulage": "sensor installation position", "modus": "mode", "liegt nicht vor": "is not available", "liegt": "is", "zusatzvolumenventil": "additional volume valve", "ablassventil": "drain valve", "umschalteinheit": "switchover unit", "federbeindruck": "strut pressure", "bergabfahrassistent": "hill descent assist", "anfahrhilfe": "hill start aid", "multikollisionsbremse": "multi-collision brake", "anhaltewegverkuerzung": "stopping distance reduction", "rollsicherung": "roll protection", "anfahrmoment": "drive-off torque", "stufig": "stage", "hydraulische": "hydraulic", "ansteuerwert": "activation value", "frischluftgeblaese": "fresh air blower", "microphon": "microphone", "rueckspeisungen": "energy recoveries", "mindestzeit": "minimum time", "tastfunktion": "momentary function", "tippfunktion": "tip function", "ausloesesignal": "trigger signal", "einen": "a", "temperaturerfassung": "temperature sensing", "einsatzpunkt": "engagement point", "schon": "already", "durchgelaufen": "completed", "normalmodus": "normal mode", "benutzter": "used", "benutzten": "used", "schluesselsuch": "key search", "defaultgeschwindigkeit": "default speed", "verletzung": "violation", "tuergriffelektronik": "door handle electronics", "symbolik": "symbols", "sonderbereifung": "special tires", "reifenbeschreibung": "tire description", "fussgaengerwarnung": "pedestrian warning", "kamerasicht": "camera view", "unterstuetzt": "supported", "notbremswarnanzeige": "emergency brake warning display", "einspurmodell": "single-track model", "angetrieben": "driven", "gebremst": "braked", "freirollend": "free rolling", "ionisator": "ionizer", "testnachricht": "test message", "normalbetrieb": "normal operation", "hersteller": "manufacturer", "herstellerpruefstandsnummer": "manufacturer test bench number", "bindstrich": "hyphen", "applikationsversion": "application version", "inkompatible": "incompatible", "ausgekuppelt": "disengaged", "saugrohrunterdruck": "intake manifold vacuum", "radumfang": "wheel circumference", "generell": "general", "motoranlauf": "engine start", "zwingend": "absolutely", "notwendig": "necessary", "stoppverbot": "stop ban", "neutralsensor": "neutral sensor", "magnetkupplung": "magnetic clutch", "abwuergeschutz": "stall protection", "gekoppelt": "coupled", "heizungsabsperrventil": "heating shutoff valve", "federabsperrventil": "spring shutoff valve", "monostabil": "monostable", "wasserpumpennachlauf": "water pump afterrun", "temperaturvorwahl": "temperature preselection", "verbaupruefung": "installation check", "tastenkombination": "button combination", "jokerfunktion": "joker function", "umschalttaste": "switchover button", "neutralstellung": "neutral position", "lichtschema": "light scheme", "reserverad": "spare wheel", "schwellerbeleuchtung": "sill lighting", "obd-dose": "OBD socket", "umfeldleuchte": "surround lamp", "lernlauf": "learning run", "reversierung": "reversing", "aufgetreten": "occurred", "registriert": "registered", "verifiziert": "verified", "ungeschaerft": "disarmed", "schaerfezustand": "arming state", "alarmstatus": "alarm status", "alarmanlage": "alarm system", "anlass": "occasion", "erstinbetriebnahme": "first commissioning", "fahrerberechtigungskarten": "driver authorization cards", "sieben": "seven", "signalstaerke": "signal strength", "marke": "brand", "derivat": "derivative", "absatzmarkt": "sales market", "getriebeart": "transmission type", "doppelkupplungsgetriebe": "dual clutch transmission", "dampfdruckstufe": "vapor pressure stage", "unkritisch": "uncritical", "tankvolumen": "tank volume", "partikelfilter": "particulate filter", "groesse": "size", "ausbaustufe": "expansion stage", "doppelluefter": "dual fan", "stufenlos": "continuously variable", "offroadschalter": "offroad switch", "lenkungsart": "steering type", "kuehlerjalousie": "radiator shutter", "startzeitluecke": "start time gap", "linsenheizung": "lens heating", "blindheitserkennung": "blindness detection", "diebstahlschutz": "theft protection", "entwicklerbotschaften": "developer messages", "individualisierungsmerkmal": "individualization feature", "fahrzeuguebergreifend": "cross-vehicle", "parkhilfe": "park assist", "zusatzinformation": "additional information", "innerer": "inner", "pro": "per", "ausschaltgeschwindigkeitsschwelle": "switch-off speed threshold", "fehlerton": "fault tone", "quittierton": "acknowledge tone", "demoton": "demo tone", "ruecknahme": "withdrawal", "angezogener": "applied", "manueller": "manual", "manuellem": "manual", "schwenkbarer": "swiveling", "mittelkritische": "medium-critical", "hindernisse": "obstacles", "vierradantrieb": "four-wheel drive", "laendercharakteristik": "country characteristics", "dauertonausweitung": "continuous tone extension", "targaparameter": "Targa parameters", "plausibilitaet": "plausibility", "diagnosezugang": "diagnostic access", "heckradar": "rear radar", "soundaktor": "sound actuator", "zweiseitig": "two-sided", "motorsensorik": "motor sensors", "fangbereich": "catch range", "flankenabhaengigkeit": "edge dependency", "produktionsmode": "production mode", "reversier": "reversing", "inkremente": "increments", "angesteuert": "activated", "greifpunkt": "grip point", "eingelaufen": "run in", "toleranzband": "tolerance band", "welle": "shaft", "schema": "scheme", "bevorzugter": "preferred", "einschaltrampe": "switch-on ramp", "ruecksetzmodus": "reset mode", "quittierung": "acknowledgment", "ausgefuehrte": "executed", "notlaeufe": "limp mode events", "einmalige": "one-time", "gruen": "green", "russindex": "soot index", "ausblenden": "hide", "verbrennungsmotor": "combustion engine", "vorgluehen": "glow plug preheating", "umluftreinigung": "recirculation cleaning", "abscheidevolumen": "separation volume", "erschoepft": "exhausted", "kollisions": "collision", "motorkennbuchstabe": "engine code letters", "gestartet": "started", "dieselpartikelfilter": "diesel particulate filter", "motorstop": "engine stop", "bremskraftverstaerkung": "brake force boosting", "auffuellen": "refill", "abgebrochen": "aborted", "blockiert": "blocked", "nachfuellmenge": "refill quantity", "kugelrampe": "ball ramp", "verteilergetriebe": "transfer case", "ueberschnapper": "overshoot", "federratenmodus": "spring rate mode", "wagenhebermodus": "jack mode", "aufwaerts": "upward", "statusbyte": "status byte", "routinestatus": "routine status", "fahrbereitschaft": "readiness to drive", "fahrzeugverschraenkung": "vehicle articulation", "verschraenkung": "articulation", "ungefiltert": "unfiltered", "vollstaendiger": "complete", "luftmengenmessung": "air quantity measurement", "befuellung": "filling", "konzernindex": "group index", "konzern": "group", "basisradstand": "base wheelbase", "achs": "axle", "stadt": "city", "aktuatorik": "actuators", "kreuzungslicht": "intersection light", "mitleuchtend": "co-illuminating", "nebellichtunterstuetzung": "fog light support", "schlechtwetterlicht": "bad weather light", "starken": "strong", "ecomodus": "eco mode", "spannungserfassung": "voltage sensing", "sichergestellt": "ensured", "abgeschlossen": "completed", "ausserordentlich": "extraordinarily", "bereits": "already", "lichtaktor": "light actuator", "gegeben": "given", "gemessen": "measured", "gemessener": "measured", "eingelesen": "read in", "positiv": "positive", "leichtbau": "lightweight", "entluefung": "venting", "hebebuehnenregler": "lift controller", "serviceregler": "service controller", "schiefstandregler": "tilt controller", "achsregler": "axle controller", "druckausgleich": "pressure equalization", "fahrzeugschiefstand": "vehicle tilt", "fehlerquelle": "fault source", "umrechnungsfaktor": "conversion factor", "bremst": "braking", "spaet": "late", "servicevertrag": "service contract", "gong": "chime", "grosse": "large", "frontscheibenheizung": "windshield heating", "maskierung": "masking", "ueberlauf": "overflow", "lichtverteilung": "light distribution", "oelservice": "oil service", "entprellung": "debouncing", "haelt": "holds", "abwaerts": "downward", "projektindividuell": "project-specific", "mess-can": "measuring CAN", "anzeigetext": "display text", "schliessbew.": "closing movement", "anz.": "number of", "zeitl.": "temporal", "entw.": "development", "betaet.": "actuation", "oeltemp.": "oil temp", "akt.": "current", "aussenbel.": "exterior lighting", "bremsl.": "brake light", "prod.": "production", "verd.": "top", "bed.": "operating", "man.": "manual", "unbek.": "unknown", "unbel.": "unloaded", "inkl.": "incl.", "u.": "and", "f.": "for", "d.": "of the", "geschw.": "speed", "pos.": "position", "akust.": "acoustic", "bzw.": "or", "fussg.": "pedestrian", "elekr.": "electr.", "elektr.": "electr.", "klimakomp.": "climate compressor"}, "TRANS_VALUE": {"ja": "yes", "Ja": "Yes", "nein": "no", "Nein": "No", "nicht aktiv": "not active", "aktiv": "active", "Aktiv": "Active", "inaktiv": "inactive", "Inaktiv": "Inactive", "aus": "off", "ein": "on", "Ein": "On", "an": "on", "deaktiv": "deactivated", "verbaut": "installed", "unverbaut": "not installed", "nicht verbaut": "not installed", "Nicht verbaut": "Not installed", "keine verbaut": "none installed", "Kein Fehler erkannt": "No fault detected", "Kein Fehler": "No fault", "kein Fehler": "no fault", "Kommunikation gestoert": "Communication disturbed", "Kommunikation in Ordnung": "Communication OK", "Zuendkreis deaktiviert": "Ignition circuit deactivated", "Endstufe nicht fuer die eingestellte Dauer durchgeschaltet.": "Output stage not switched through for the configured duration.", "Zuendkreisansteuerung 1.75A/1ms": "Ignition circuit activation 1.75A/1ms", "Ersatzmassnahme nicht aktiv": "Substitute measure not active", "KEINE WARNUNG": "NO WARNING", "keine Warnung vorhanden": "no warning present", "nicht angelernt": "not learned", "nicht betaetigt": "not pressed", "betaetigt": "pressed", "unbetaetigt": "not pressed", "kein Eintrag": "no entry", "Botschaft aktuell": "Message current", "Signal gueltig": "Signal valid", "Gurtschloss nicht gesteckt": "Belt buckle not latched", "nicht gesteckt": "not latched", "Diagnose nicht abgeschlossen": "Diagnosis not completed", "normiert": "normalized", "nicht normiert": "not normalized", "Initwert": "Initial value", "Initialwert": "Initial value", "Defaultwert": "Default value", "Beifahrerairbag deaktiviert": "Passenger airbag deactivated", "Position erkannt": "Position detected", "Ganganzeige leer": "Gear display empty", "Schluessel 1": "Key 1", "Geprueft i.O": "Checked OK", "Freigabe": "Release", "mittel": "medium", "Paniktaste Schluessel (nur USA)": "Panic button key (USA only)", "Grau": "Gray", "grau": "gray", "Gelb": "Yellow", "gelb": "yellow", "Rot": "Red", "rot": "red", "weiss": "white", "kein Fehlereintrag vorhanden": "no fault entry present", "Sitz nicht belegt": "Seat not occupied", "Position \"Vorne\" erkannt": "Position \"front\" detected", "automatisch": "automatic", "35 Akustik Gurtwarnung": "35 acoustic belt warning", "Vollerkennung": "Full detection", "Kein Objekt im Messbereich": "No object in measuring range", "Halbschritt": "Half step", "Mikroschritt": "Microstep", "Slave nicht verbaut": "Slave not installed", "Linkslenker": "Left-hand drive", "Rechtslenker": "Right-hand drive", "verfuegbar": "available", "Kein Schreibauftrag": "No write job", "Lampe aus": "Lamp off", "Airbag nicht in Diagnose": "Airbag not in diagnosis", "kein KD-Fehler": "no KD fault", "Keine Anzeige": "No display", "keine Anzeige": "no display", "keine Anzeige/ Leerzeile": "no display / blank line", "Kein qualifizierter Fehler vorhanden.": "No qualified fault present.", "Kein Crash": "No crash", "Fehlereintrag": "Fault entry", "Drehmomentanzeige": "Torque display", "Fahrzeug": "Vehicle", "Die letzte Programmierung war erfolgreich": "The last programming was successful", "ungueltig (noch kein Kalibriervorgang im Kl. 15 - Zyklus)": "invalid (no calibration yet in the Kl. 15 cycle)", "erfuellt": "fulfilled", "nicht erfuellt": "not fulfilled", "nicht belegt": "not assigned", "Block programmiert und kompatibel": "Block programmed and compatible", "Restreichweite und Tankanzeige": "Remaining range and fuel gauge", "Uhrzeit und Temperatur": "Time and temperature", "Fahrtrichtung": "Direction of travel", "nach Anfahren": "after driving off", "MM/TT/JJJJ": "MM/DD/YYYY", "US-Englisch": "US English", "KI-BC-Seite Fahrzeug": "Cluster BC page, vehicle", "Oeltemperatur": "Oil temperature", "Oeldruck": "Oil pressure", "Kuehlwassertemperatur": "Coolant temperature", "Nachtankereignis OK": "Refueling event OK", "Tipptaste nicht betaetigt": "Momentary button not pressed", "volle Funktion": "full function", "nicht erkannt": "not detected", "gespannt": "tensioned", "normaler Sendemode": "normal transmit mode", "Ungueltige Satelliten-ID": "Invalid satellite ID", "LED aus": "LED off", "LED ein": "LED on", "Zweiradantrieb": "Two-wheel drive", "gueltig": "valid", "ungueltig": "invalid", "gueltiger Wert": "valid value", "ungueltiger Wert": "invalid value", "ungueltiger Schluessel": "invalid key", "offen": "open", "FFB auf": "FFB unlock", "FFB zu": "FFB lock", "FFB Deckel hinten / Heckklappe": "FFB rear lid / tailgate", "Fahrertuer": "Driver door", "Gang 1": "Gear 1", "Gang 2": "Gear 2", "1. Gang": "1st gear", "Reserve wurde erkannt": "Reserve was detected", "Benzin": "Gasoline", "Benziner": "gasoline engine", "Stillstand": "Standstill", "vorne links": "front left", "vorne rechts": "front right", "hinten links": "rear left", "hinten rechts": "rear right", "unten rechts": "bottom right", "keine HF-Ueberdeckung": "no RF coverage", "keiner": "none", "einfahren": "retract", "SG codiert": "ECU coded", "Leuchte wird abgeschaltet": "Lamp is switched off", "PTC Heizung": "PTC heater", "Motor 4 Limo vorn": "Motor 4 sedan front", "FH steht": "Window lifter stopped", "kein Messwert": "no measured value", "auf": "open", "verriegelt": "locked", "entriegelt": "unlocked", "nicht erlaubt": "not permitted", "erlaubt": "permitted", "Key-Taste": "Key button", "Memory abschalten wegen Off": "Switch off memory due to Off", "nicht gedrueckt": "not pressed", "bei langsamer Fahrt eingelernt, fertig eingelernt": "learned at low speed, fully learned", "Unterbrechung": "Open circuit", "Sitz ist leer": "Seat is empty", "Sitzpsition Hinten": "Seat position rear", "Bremse geschlossen": "Brake closed", "kein Bremsen": "no braking", "Kommunikation mit Vorderwagenelektronik": "Communication with front-end electronics", "Diagnose nicht unterstuetzt": "Diagnosis not supported", "Relais i.O.": "Relay OK", "alle Tueren": "all doors", "Bordspannung": "On-board voltage", "GPS-Hoehe": "GPS altitude", "Negativ": "Negative", "nicht angeschlossen": "not connected", "angeschlossen": "connected", "136 Reichweite (Tankinhalt)": "136 range (tank content)", "26 Gurtwarnung": "26 belt warning", "141 Service-Intervall-Anzeige": "141 service interval display", "Statistische Plausibilisierung fehlgeschlagen": "Statistical plausibility check failed", "passive Magnetstellung": "passive magnet position", "Sensor nicht gedreht": "Sensor not rotated", "kalibriert": "calibrated", "Variante verfuegbar": "Variant available", "Heck": "Rear", "Schwelle 1": "Threshold 1", "EVB ein": "EVB on", "HBA nicht durch ACC getriggert": "HBA not triggered by ACC", "EVB nicht durch ACC getriggert": "EVB not triggered by ACC", "DST ein": "DST on", "Anfahrassistent HOLD/Hillhold an": "Hill start assist HOLD/hillhold on", "ACC aus": "ACC off", "keine Ansteuerung": "no activation", "Bremse nicht betaetigt": "Brake not pressed", "Stahl": "Steel", "Klemme 15": "Terminal 15", "kein Hybridfahrzeug": "no hybrid vehicle", "geoeffnet": "opened", "VW Wandlerautomat": "VW torque converter automatic", "Einschleifen nicht gestartet und System kalibriert": "Grinding-in not started and system calibrated", "DAR nicht verfuegbar, Fahrertuer offen, Fahrer nicht angeschnallt": "DAR not available, driver door open, driver not buckled", "DAR nicht verfuegbar, Fahrer nicht angeschnallt": "DAR not available, driver not buckled", "SG-Nachlauf": "ECU afterrun", "RdW": "RoW (rest of world)", "Lernphase laeuft": "Learning phase in progress", "Fahrzeug steht": "Vehicle stationary", "CAN-Aktivitaet": "CAN activity", "VERDECK SYNC-SG": "CONVERTIBLE TOP SYNC ECU", "Datumsinformation fehlerhaft": "Date information faulty", "Kilometerstand fehlerhaft": "Odometer reading faulty", "Verdeck in Endlage (geoeffnet)": "Convertible top in end position (opened)", "DK verbaut": "DK installed", "EC-Spiegel verbaut": "EC mirror installed", "Innenraumueberwachung verbaut": "Interior monitoring installed", "Kontakt Handschuhkasten": "Glovebox contact", "DriveDown (Das System ist bereit, Lenkunterstuetzung kann zugeschaltet werden)": "DriveDown (system ready, steering assist can be engaged)", "KL15 ein": "KL15 on", "unplausibel": "implausible", "Steuergeraet programmiert und verriegelt.": "Control unit programmed and locked.", "Nicht vorhanden": "Not present", "Subbusystem Tastenfeld verbaut": "Sub-bus system keypad installed", "Sportabgas": "Sport exhaust", "Verdeck oeffnen": "Open convertible top", "Verdeck schliessen": "Close convertible top", "nicht getoent": "not tinted", "eigene Codierung verwenden": "use own coding", "Automatikgetriebe": "Automatic transmission", "Tasten": "Buttons", "Komfort-Memory": "Comfort memory", "saubere Luft": "clean air", "zentr Gateway": "central gateway", "Sauger": "naturally aspirated", "sperren": "lock", "Endlage eingefahren erreicht": "End position retracted reached", "Beide Sensorwerte nicht im gueltigen Bereich/ ungueltig.": "Both sensor values not in valid range / invalid.", "Abgleichswerte OffsetFront und OffsetRear sind gueltig.": "Calibration values OffsetFront and OffsetRear are valid.", "kalibrierte Hoehenwerte in mm": "calibrated height values in mm", "USA / Kanada": "USA / Canada", "USA. Kanada und US-Aussenterritorien": "USA, Canada and US outlying territories", "zwei": "two", "vorwaerts": "forward", "es wurde keine Taste gedrueckt seit Power On": "no button pressed since power on", "Fehler": "Fault", "9x1 Sportwagen": "9x1 sports car", "Verbundrelease / Serienstand": "Network release / production level", "Produktions-BIN": "Production BIN", "Startfreigabe in P": "Start release in P", "keine Anforderung": "no request", "Kein ESP Eingriff": "No ESP intervention", "ESP aktiviert": "ESP activated", "kein Kickdown": "no kickdown", "Programm 2": "Program 2", "nicht verbaut oder kein ACC zulaessig": "not installed or no ACC permitted", "Faktor: x 1,0Nm": "Factor: x 1.0 Nm", "keine Schaltung aktiv": "no shift active", "Kupplung geoeffnet": "Clutch open", "Ventil TMM oder geschlossen": "Valve TMM or closed", "Kein Notlauf": "No limp mode", "Kalibrierung durch Produktion erfolgt": "Calibration done by production", "Kein Signal": "No signal", "Funkschluessel 1 aktiv": "Radio key 1 active", "leiser": "quieter", "abwaerts": "downward", "Wischerstellung 0": "Wiper position 0", "Intervallstellung 1": "Intermittent position 1", "Neutral-Stellung": "Neutral position", "Tempomat-Taste unbetaetigt": "Cruise control button not pressed", "Stellung offen / unbetaetigt": "Position open / not pressed", "LHZ-Taster nicht betaetigt": "LHZ button not pressed", "Stoppuhr": "Stopwatch", "Kommunikation mit Steuergeraet-PSM": "Communication with PSM control unit", "Kommunikation mit Steuergeraet Getriebe": "Communication with transmission control unit", "Fehler im Ausloesegeraet POSIP/Airbag": "Fault in deployment unit POSIP/airbag", "DME Steuergeraet defekt: Reset": "DME control unit defective: reset", "Fehlerspeicherinhalt Steuergeraet-PSM pruefen": "Check fault memory of PSM control unit", "Ansteuerung Starterrelais": "Starter relay activation", "Lambdasonde vor Kat Bank 1 - Dynamik": "Oxygen sensor upstream of catalyst, bank 1 - dynamics", "Lambda-Sonde vor Kat Bank 2 - Dynamik": "Oxygen sensor upstream of catalyst, bank 2 - dynamics", "Diagnose ohne Fehler beendet": "Diagnosis completed without faults", "Kurztest bereit": "Short test ready", "WWS verbaut": "WWS installed", "RLS verbaut": "RLS installed", "LDS verbaut": "LDS installed", "UGDO verbaut": "UGDO installed", "LV verbaut": "LV installed", "Start aktiv": "Start active", "ELV-Position unbekannt": "ELV position unknown", "Hybrid nicht aktiviert": "Hybrid not activated", "REK aktiviert": "REK activated", "erweiterte REK nicht aktiviert": "extended REK not activated", "Segeln aktiviert": "Coasting activated", "Start/Stopp aktiviert": "Start/stop activated", "Batterie ist angeschlossen": "Battery is connected", "Funktion nicht aktiv": "Function not active", "Ungueltige EEPROMDaten (Checksummenfehler)": "Invalid EEPROM data (checksum error)", "Es ex. weitere Fehler, die zur Nichtauswertbarkeit fuehren": "Further faults exist that prevent evaluation", "HauptSich.Box": "Main fuse box", "Abschaltung Kl30f moeglich": "Switch-off of Kl30f possible", "Kl.15 diskret = Kl.15 LIN": "Kl.15 discrete = Kl.15 LIN", "keine Fremdladung erkannt": "no external charging detected", "Kl.30f Relais ein": "Kl.30f relay on", "Kl.30sd Relais ein": "Kl.30sd relay on", "HSB im Fahrbetrieb": "HSB in driving operation", "HSB nicht im Transportmode": "HSB not in transport mode", "Einfuehrungsmodell": "Launch model", "Tankvariante_1": "Tank variant_1", "Skalenbeleuchtung alt (Standlichtkontrollleuchte als Fahrlichtkontrollleuchte \"Abblendlicht\")": "Scale illumination old (standing light indicator as driving light indicator \"low beam\")", "Reifenumfang 19\"": "Tire circumference 19\"", "PT1 Fototransistordaempfung": "PT1 phototransistor damping", "lineare Fototransistordaempfung": "Linear phototransistor damping", "links": "left", "rechts": "right", "Ruecksetzen bei Tastenbedienung": "Reset on button operation", "Sommerreifen": "Summer tires", "19 Zoll": "19 inch", "Teilbeladung": "Partial load", "Komfortdruck": "Comfort pressure", "Schwelle 270 km/h": "Threshold 270 km/h", "Anzeigetext": "Display text", "Mehr Verkehrszeichen": "More traffic signs", "Klemme S an": "Terminal S on", "Bargraf skaliert": "Bar graph scaled", "Grafikdarstellung klein": "Graphic display small", "196 PSM in Diagnose": "196 PSM in diagnosis", "116 Parkbremse im Servicemodus": "116 parking brake in service mode", "265 Schluesselwarnung Akustik": "265 key warning acoustic", "82 Bitte den Waehlhebel in P": "82 please put the selector lever in P", "Nachtankmodus": "Refueling mode", "Verbrauchsrueckrechnung": "Consumption back-calculation", "Externer Photosensor": "External photosensor", "Beschleunigungssensor ADXL 180; 100 g": "Acceleration sensor ADXL 180; 100 g", "Beschleunigungssensor ADXL 180; 250 g": "Acceleration sensor ADXL 180; 250 g", "Drucksensor KP106; -2.4 .. 11.0 %": "Pressure sensor KP106; -2.4 .. 11.0 %"}, "TRANS_UNIT": {"Anzahl": "count", "Zyklen": "cycles", "Zaehler": "counter", "Versuche": "attempts", "Betaet.": "actuations", "sek": "sec"}, "ECU_GLOSS": {"WH": "selector lever", "PASM+PADM 9x1 a2.1": "adaptive suspension (PASM+PADM)", "PSM_a2": "stability management (PSM)", "Parkbremse_a7": "parking brake", "Sensorcluster": "sensor cluster", "Reifendruckkontrolle_A2_4": "tire pressure monitoring", "Verdeck Synchronisations-SG A1.0": "convertible top synchronization ECU", "BCM hinten 9x1 VR12": "body control module rear", "IRUE": "interior monitoring", "EC-Spiegel": "electrochromic mirror", "Dachkonsole": "roof console", "EPS_A2_2": "electric power steering", "Tuer_Vorne_A2_2 (Tuer vorne rechts)": "front door, right", "Tuer_Vorne_A2_2 (Tuer vorne links)": "front door, left", "Sitz_A2.1_9x1 (Sitz Beifahrer)": "passenger seat", "Sitz_A2.1_9x1 (Sitz Fahrer)": "driver seat", "Airbag_A2.6_9x1": "airbag", "PODS Insassenerkennung": "PODS occupant detection", "BKE_2_Zonen_A2_3": "climate control (2-zone)", "BKE-Tastenfeld": "climate control keypad", "PDC_8_Kanal_A2_4": "park distance control (8-channel)", "SWSG_Master_mit_AFS_ab_VR06 (Scheinwerfer links)": "headlight ECU master with AFS, left headlight", "SWSG_Slave_mit_AFS_ab_VR06 (Scheinwerfer rechts)": "headlight ECU slave with AFS, right headlight", "PCM31 A3.3": "Porsche Communication Management", "PDK A3 ohne Quersperre": "PDK transmission, no differential lock", "Kombilenkstockmodul_A2_5": "steering column stalk module", "MFL": "multifunction steering wheel", "Zusatzinstrument_A2.1": "auxiliary instrument", "SDI9.1 981 3,4L ULEV": "engine control unit (DME)", "BCM vorne 9x1 Basis VR12": "body control module front", "Lichtdrehschalter": "headlight rotary switch", "Wischwinkelsteuerung": "wiper angle control", "Regen-Licht-Feuchte-Sensor": "rain/light/humidity sensor", "Lenksaeulenverstellung": "steering column adjustment", "UGDO": "universal garage door opener", "CAN/CAN-Gateway A4.2": "CAN gateway", "Intelligenter Batteriesensor": "intelligent battery sensor", "Hauptsicherungsbox": "main fuse box", "DC/DC-Wandler": "DC/DC converter", "Generator": "alternator", "Kombiinstrument_A2.8": "instrument cluster", "Stahlfederung Colorado mit PASM_a2.3": "steel suspension with PASM", "SCHEINWERFER_4": "headlight", "SCHEINWERFER_LEIMO_RECHTS": "headlight power module, right", "SCHEINWERFER_LEIMO_LINKS": "headlight power module, left", "SCHEINWERFER_LED_LINKS": "LED headlight, left", "SCHEINWERFER_LED_RECHTS": "LED headlight, right", "EV_ESP_10001": "stability control (ESP)", "Zwei_Drei_Zonen_Climatronic_A2.45": "climate control (2/3-zone Climatronic)", "Bedienteil Slave": "control panel, slave", "SWA2_A2_1": "lane change assist", "Lane_change_assistant 2": "lane change assist", "RCevo_PO416_UKR_002": "reversing camera", "Kombilenkstockmodul_A1_2": "steering column stalk module", "BCM hinten E2 GT5": "body control module rear", "Sounder": "alarm sounder", "Sonnenrollo (Dach)": "sun blind (roof)", "Panorama-/Grossdach": "panoramic/large roof", "VTS": "vehicle tracking system", "Tuer_Hinten_A2_2 (Tuer hinten rechts)": "rear door, right", "Tuer_Hinten_A2_2 (Tuer hinten links)": "rear door, left", "Sitz_A2.1_E2 (Sitz Fahrer)": "driver seat", "Sitz_A2.1_E2 (Sitz Beifahrer)": "passenger seat", "RealTopView2_009": "surround view camera", "ECM 30TFS 011 95B 907 559E 001": "engine control module", "AMP Mst 16C4 Gen2 BOSE 002": "BOSE amplifier", "ACC3_A7": "adaptive cruise control", "MU Hig Gen2plus ALPI": "media unit (PCM)", "Centerdisplay": "center display", "Navi - Datenbank": "navigation database", "PDC_8_Kanal_A2_7": "park distance control (8-channel)", "Scheinwerfer_LED_DK2F_001 (Scheinwerfer LED rechts)": "LED headlight, right", "Scheinwerfer_LED_DK2F_001 (Scheinwerfer LED links)": "LED headlight, left", "CAN/CAN-Gateway A7.1": "CAN gateway", "Heckklappe A2_7": "tailgate", "TCM DL 501 021": "transmission control module", "EV AirbaVW10BPAVW526 002": "airbag", "PODS": "occupant detection", "Zusatzinstrument_A2.3": "auxiliary instrument", "BCM vorne E2 Max GT5": "body control module front", "Kombiinstrument_Gen2_A4.2": "instrument cluster", "MFK Bosch PO416": "multifunction camera", "RDK3_007": "tire pressure monitoring", "Allrad_A2.3": "all-wheel drive", "Trailer Function Generation 2 Hella": "trailer function"}, "EXTRA_STEMS": {"fahr": "driving", "zuend": "ignition", "heiz": "heating", "kuehl": "cooling", "brems": "brake", "schalt": "shift", "steuer": "control", "regel": "control", "wisch": "wipe", "wasch": "wash", "lade": "charge", "mess": "measuring", "pruef": "test", "warn": "warning", "anzeig": "display", "verstell": "adjustment", "sperr": "lock", "dreh": "rotation", "blink": "flash", "leucht": "light", "senk": "lower", "heb": "lift", "weg": "travel", "zahl": "count", "ablage": "storage", "fixierung": "securing", "halterung": "mount", "halter": "holder", "traeger": "carrier", "kontakt": "contact", "schutz": "protection", "wechsel": "change", "freigabe": "release", "begrenzung": "limiting", "erhoehung": "increase", "absenkung": "lowering", "anhebung": "raising", "oeffnung": "opening", "schliessung": "closing", "meldung": "message", "kennzeichnung": "marking", "zuordnung": "assignment", "abfrage": "query", "vorgabe": "specification", "grenze": "limit", "punkt": "point", "feld": "field", "gruppe": "group", "satz": "set", "folge": "sequence", "lauf": "run", "luft": "air", "wasser": "water", "oel": "oil", "sonde": "probe", "takt": "cycle", "hinter": "rear", "vorder": "front", "panorama": "panoramic", "werk": "factory", "heck": "rear", "last": "load", "stell": "adjustment", "sensor": "sensor", "motor": "motor", "status": "status", "system": "system", "info": "info", "test": "test", "signal": "signal", "filter": "filter", "parameter": "parameters", "modus": "mode", "elektronik": "electronics", "management": "management", "manager": "manager", "logger": "logger", "code": "code", "bus": "bus", "slave": "slave", "master": "master", "display": "display", "memory": "memory", "phototransistor": "phototransistor", "skala": "scale", "methode": "method", "zone": "zone", "ziel": "target", "haupt": "main", "neben": "secondary", "sonder": "special", "ober": "upper", "gesamt": "total", "kalibrier": "calibration", "detektion": "detection", "spitze": "peak", "spitzen": "peak"}, "STEM_EXCLUDE": ["alle", "als", "anzahl der", "auf", "aus", "bei", "beim", "das", "dem", "den", "der", "des", "die", "durch", "ein", "eine", "einmal", "fuer", "gleich", "groesser", "immer", "ist", "mit", "nach", "nicht", "nur", "oder", "ohne", "seit", "sind", "ueber", "und", "unter", "von", "vor", "war", "wegen", "weil", "welcher", "wenn", "wird", "zurueck", "zwischen"]};
+</script>
+<script>
+// PIWISViewer web engine: JavaScript port of the translation and
+// rendering logic in piwis_val_viewer.py. The dictionaries, report CSS,
+// and report JS are NOT duplicated here -- they are extracted from the
+// Python file by make_web.py and passed to PIWIS.init() as data, so the
+// Python file remains the single source of truth.
+//
+// The renderer consumes a plain object tree:
+//   node = { tag: str, attrib: {name: value}, text: str|null,
+//            children: [node, ...] }
+// which the browser builds from DOMParser output and the Node parity
+// harness builds from a JSON dump of Python's ElementTree.
+
+(function (global) {
+    'use strict';
+
+    var PIWIS = {};
+    var D = null;            // injected data (dicts, CSS, JS, APP_NAME)
+    var TRANSLIT = null;     // codepoint -> replacement string
+    var PHRASE_RE = null;
+    var STEMS = null;
+    var LABEL_CACHE = null;
+    var VALUE_CACHE = null;
+
+    // ---------------- small utilities ----------------
+
+    function reEscape(s) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // mirror of Python html.escape(s, quote=True)
+    function esc(text) {
+        if (text === null || text === undefined) return '';
+        return String(text).trim()
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+            .replace(/'/g, '&#x27;');
+    }
+
+    // mirror of norm_de(): transliterate, collapse whitespace
+    function normDe(text) {
+        if (text === null || text === undefined || text === '') return '';
+        var out = [];
+        var s = String(text);
+        for (var i = 0; i < s.length; i++) {
+            var cp = s.charCodeAt(i);
+            var rep = TRANSLIT[cp];
+            out.push(rep !== undefined ? rep : s.charAt(i));
+        }
+        return out.join('').replace(/\s+/g, ' ').trim();
+    }
+
+    // Python round() (banker's rounding) for unit conversion
+    function pyRound(x) {
+        var f = Math.floor(x);
+        var d = x - f;
+        if (d < 0.5) return f;
+        if (d > 0.5) return f + 1;
+        return (f % 2 === 0) ? f : f + 1;
+    }
+
+    // ---------------- tree accessors (ElementTree subset) ----------------
+
+    function matchSeg(node, seg) {
+        var m = /^([^\[]+)(?:\[@([A-Za-z_]+)='([^']*)'\])?$/.exec(seg);
+        if (!m) return false;
+        if (node.tag !== m[1]) return false;
+        if (m[2] !== undefined) {
+            return (node.attrib[m[2]] || null) === m[3];
+        }
+        return true;
+    }
+
+    function findall(node, path) {
+        if (path.slice(0, 3) === './/') {
+            var tag = path.slice(3);
+            var acc = [];
+            (function walk(n) {
+                for (var i = 0; i < n.children.length; i++) {
+                    var c = n.children[i];
+                    if (c.tag === tag) acc.push(c);
+                    walk(c);
+                }
+            })(node);
+            return acc;
+        }
+        var segs = path.split('/');
+        var cur = [node];
+        for (var s = 0; s < segs.length; s++) {
+            var next = [];
+            for (var i = 0; i < cur.length; i++) {
+                var ch = cur[i].children;
+                for (var j = 0; j < ch.length; j++) {
+                    if (matchSeg(ch[j], segs[s])) next.push(ch[j]);
+                }
+            }
+            cur = next;
+        }
+        return cur;
+    }
+
+    function find(node, path) {
+        var all = findall(node, path);
+        return all.length ? all[0] : null;
+    }
+
+    function findtext(node, path) {
+        var n = find(node, path);
+        if (n === null) return null;
+        return n.text === null || n.text === undefined ? '' : n.text;
+    }
+
+    // ---------------- translation engine ----------------
+
+    function buildPhraseRe() {
+        var dotted = [], plain = [], k;
+        for (k in D.TRANS_PHRASE) {
+            if (k.slice(-1) === '.') dotted.push(k);
+            else plain.push(k);
+        }
+        var byLen = function (a, b) { return b.length - a.length; };
+        dotted.sort(byLen);
+        plain.sort(byLen);
+        var pat = '(?<![A-Za-z])(' + dotted.map(reEscape).join('|')
+            + (dotted.length ? '|' : '')
+            + '(?:' + plain.map(reEscape).join('|')
+            + ')(?![A-Za-z]))';
+        return new RegExp(pat, 'gi');
+    }
+
+    function buildStems() {
+        var stems = {}, k;
+        for (k in D.EXTRA_STEMS) stems[k] = D.EXTRA_STEMS[k];
+        var excl = {};
+        for (var i = 0; i < D.STEM_EXCLUDE.length; i++) {
+            excl[D.STEM_EXCLUDE[i]] = true;
+        }
+        for (k in D.TRANS_PHRASE) {
+            if (/^[a-z]+$/.test(k) && k.length >= 3 && !excl[k]) {
+                stems[k] = D.TRANS_PHRASE[k];
+            }
+        }
+        return stems;
+    }
+
+    function decompose(word, depth) {
+        depth = depth || 0;
+        if (depth > 3 || word.length < 6) return null;
+        for (var end = word.length - 3; end > 2; end--) {
+            var eng = STEMS[word.slice(0, end)];
+            if (eng === undefined) continue;
+            var rest = word.slice(end);
+            var links = ['', 's', 'es', 'n', 'en', 'e'];
+            for (var li = 0; li < links.length; li++) {
+                var link = links[li];
+                if (rest.slice(0, link.length) !== link) continue;
+                var r2 = rest.slice(link.length);
+                if (r2.length < 3) continue;
+                var sub = STEMS[r2];
+                if (sub === undefined) sub = decompose(r2, depth + 1);
+                if (sub) return eng + ' ' + sub;
+            }
+        }
+        return null;
+    }
+
+    function underscoreStyle(offset, matched, whole, eng) {
+        var before = offset > 0 ? whole.charAt(offset - 1) : '';
+        var after = offset + matched.length < whole.length
+            ? whole.charAt(offset + matched.length) : '';
+        if (before === '_' || after === '_') {
+            return eng.split(/\s+/).join('_');
+        }
+        return eng;
+    }
+
+    function phrasePass(seg) {
+        // pass 1: known words and phrases, whole-word
+        var out = seg.replace(PHRASE_RE,
+            function (matched, p1, offset, whole) {
+                var eng = D.TRANS_PHRASE[matched.toLowerCase()];
+                eng = underscoreStyle(offset, matched, whole, eng);
+                if (matched.slice(-1) === '.'
+                        && offset + matched.length < whole.length
+                        && /[A-Za-z]/.test(
+                            whole.charAt(offset + matched.length))) {
+                    eng += ' ';
+                }
+                return eng;
+            });
+
+        // pass 2: decompose remaining long words into known stems
+        out = out.replace(/[A-Za-z]{6,}/g,
+            function (word, offset, whole) {
+                var lw = word.toLowerCase();
+                var dec = STEMS[lw] || decompose(lw, 0);
+                if (!dec) {
+                    var sufs = ['es', 'en', 's', 'n', 'e'];
+                    for (var i = 0; i < sufs.length; i++) {
+                        var suf = sufs[i];
+                        if (lw.slice(-suf.length) === suf
+                                && lw.length - suf.length >= 6) {
+                            var base = lw.slice(0, lw.length - suf.length);
+                            dec = STEMS[base] || decompose(base, 0);
+                            if (dec) break;
+                        }
+                    }
+                }
+                if (!dec) return word;
+                return underscoreStyle(offset, word, whole, dec);
+            });
+
+        // collapse doubled articles from stacked replacements
+        out = out.replace(/\b(?:of the|the) the\b/g, 'the');
+        if (out !== seg && /^[A-Z]/.test(seg) && /^[a-z]/.test(out)) {
+            out = out.charAt(0).toUpperCase() + out.slice(1);
+        }
+        return out;
+    }
+
+    function translateSegment(seg) {
+        if (!seg) return seg;
+        var key = seg.replace(/\d+/g, '#');
+        var tmpl = D.TRANS_SEGMENT[key];
+        if (tmpl !== undefined) {
+            var nums = seg.match(/\d+/g) || [];
+            var hashes = (tmpl.match(/#/g) || []).length;
+            if (hashes === nums.length) {
+                for (var i = 0; i < nums.length; i++) {
+                    tmpl = tmpl.replace('#', nums[i]);
+                }
+                return tmpl;
+            }
+        }
+        return phrasePass(seg);
+    }
+
+    function translateText(text, exactFirst) {
+        var norm = normDe(text);
+        if (!norm) return norm;
+        if (exactFirst) {
+            var hit0 = exactFirst[norm];
+            if (hit0 !== undefined) return hit0;
+        }
+        var hit = D.TRANS_LABEL[norm];
+        if (hit !== undefined) return hit;
+        var parts = norm.split(/(\s*:\s+|\s+-\s+)/);
+        for (var i = 0; i < parts.length; i += 2) {
+            parts[i] = translateSegment(parts[i]);
+        }
+        return parts.join('');
+    }
+
+    function translateLabel(text) {
+        var norm = normDe(text);
+        if (!(norm in LABEL_CACHE)) {
+            LABEL_CACHE[norm] = translateText(norm, null);
+        }
+        return LABEL_CACHE[norm];
+    }
+
+    function translateValue(text) {
+        var norm = normDe(text);
+        if (!(norm in VALUE_CACHE)) {
+            VALUE_CACHE[norm] = translateText(norm, D.TRANS_VALUE);
+        }
+        return VALUE_CACHE[norm];
+    }
+
+    // ---------------- rendering ----------------
+
+    function trHtml(orig, translated) {
+        orig = (orig === null || orig === undefined) ? '' : String(orig).trim();
+        if (!orig) return '';
+        if (translated === normDe(orig)) return esc(orig);
+        return '<span title="' + esc(orig) + '">' + esc(translated)
+            + '</span>';
+    }
+
+    function labelHtml(orig) { return trHtml(orig, translateLabel(orig)); }
+    function valueHtml(orig) { return trHtml(orig, translateValue(orig)); }
+
+    function unitConversion(txt, unit) {
+        var factor, cunit;
+        if (unit === 'km') { factor = 0.621371; cunit = 'mi'; }
+        else if (unit === 'bar') { factor = 14.5038; cunit = 'psi'; }
+        else return '';
+        var t = txt.replace(/,/g, '.');
+        if (!/^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$/.test(t)) {
+            return '';
+        }
+        var val = Number(t);
+        if (isNaN(val)) return '';
+        var conv = val * factor;
+        var s;
+        if (txt.indexOf('.') >= 0 || txt.indexOf(',') >= 0) {
+            s = conv.toFixed(1);
+        } else {
+            s = String(pyRound(conv));
+        }
+        return ' (' + s + '&nbsp;' + cunit + ')';
+    }
+
+    function valueCell(v) {
+        var txt = (v.text || '').trim();
+        var unit = (v.attrib.UNIT || '').trim();
+        var body = valueHtml(txt);
+        if (unit) {
+            var tu = D.TRANS_UNIT[normDe(unit)];
+            var u = esc(tu !== undefined ? tu : unit);
+            var cell = body ? (body + '&nbsp;' + u) : u;
+            return cell + unitConversion(txt, unit);
+        }
+        return body;
+    }
+
+    function kvRow(label, value) {
+        return '<tr><td class="lbl">' + label + '</td><td>' + value
+            + '</td></tr>';
+    }
+
+    function headerCards(root) {
+        var rh = find(root, 'RESULTSHEADER');
+        var res = find(root, 'RESULT');
+        var hd = res !== null ? find(res, 'HEADER') : null;
+        var eq = hd !== null ? find(hd, 'EQUIPMENT') : null;
+
+        function gt(parent, path) {
+            return parent !== null ? esc(findtext(parent, path)) : '';
+        }
+        function gtu(parent, path) {
+            if (parent === null) return '';
+            var el = find(parent, path);
+            if (el === null) return '';
+            return valueCell(el);
+        }
+
+        var veh = rh !== null ? find(rh, 'VEHICLE') : null;
+        var proto = gt(hd, 'PROTOKOLLTYPE');
+        var protoDisp = D.PROTOCOL_TYPES[proto] !== undefined
+            ? D.PROTOCOL_TYPES[proto]
+            : (proto ? 'Special-VAL (' + proto + ')' : '');
+
+        var vehicleRows = [
+            ['Creation date', gt(hd, 'END_TEST')],
+            ['Test started', gt(hd, 'START_TEST')],
+            ['Vehicle identification number', gt(veh, 'IDENT/VIN')],
+            ['Model line', gt(veh, 'DATA/MODELTYPE')],
+            ['Order type', gt(veh, 'DATA/ORDERTYPE')],
+            ['Mileage', gtu(veh, 'DATA/ODOMETER')],
+            ['Operating hours counter', gtu(veh, 'DATA/OPERATINGTIME')],
+            ['Transmission', gt(veh, 'DATA/GEARBOXTYPE')],
+            ['Engine type', gt(veh, 'DATA/ENGINETYPE')],
+            ['Country', gt(veh, 'DATA/COUNTRYCODE')],
+            ['Log type', protoDisp],
+            ['Vehicle electrical system voltage',
+             gtu(veh, 'DATA/ONBOARDVOLTAGE')]
+        ];
+        var testerRows = [
+            ['Dealer number', gt(rh, 'CARDEALER/DEALERNO')],
+            ['Tester ID', gt(eq, 'SERIAL_NO')],
+            ['Tester version', gt(eq, 'VERSION')],
+            ['PT3G version', gt(eq, 'PT2GVERSION')],
+            ['Model lines PDX', gt(eq, 'BR_PDX')],
+            ['VCI', gt(eq, 'MODEL')],
+            ['PDU API version', gt(eq, 'PDU_API')],
+            ['Operating system', gt(eq, 'SYSTEM')],
+            ['JAVA', gt(eq, 'JAVA')],
+            ['User mode', gt(eq, 'MODE')],
+            ['Time zone', gt(hd, 'TIMEZONE')]
+        ];
+        var out = ['<div class="cards">'];
+        var groups = [['Vehicle data', vehicleRows], ['Tester', testerRows]];
+        for (var g = 0; g < groups.length; g++) {
+            out.push('<div class="card"><h2>' + groups[g][0]
+                + '</h2><table class="kv">');
+            var rows = groups[g][1];
+            for (var r = 0; r < rows.length; r++) {
+                out.push(kvRow(rows[r][0], rows[r][1]));
+            }
+            out.push('</table></div>');
+        }
+        out.push('</div>');
+        return out.join('\n');
+    }
+
+    function ecuDisplay(sec) {
+        var raw = (findtext(sec, 'TITLE') || '').trim();
+        var gloss = D.ECU_GLOSS[normDe(raw)];
+        if (gloss) {
+            return '<span title="' + esc(raw) + '">'
+                + esc(gloss.charAt(0).toUpperCase() + gloss.slice(1))
+                + '</span>';
+        }
+        return esc(raw);
+    }
+
+    function identValue(sec, label) {
+        var meas = findall(sec, "MEAS[@OBJECT='Identifikation']");
+        for (var i = 0; i < meas.length; i++) {
+            var vals = findall(meas[i], 'VALUE');
+            for (var j = 0; j < vals.length; j++) {
+                if ((vals[j].attrib.LABEL || null) === label) {
+                    return esc(vals[j].text);
+                }
+            }
+        }
+        return '';
+    }
+
+    function faultValues(sec) {
+        var faults = [];
+        var meas = findall(sec, "MEAS[@OBJECT='Fehler']");
+        for (var i = 0; i < meas.length; i++) {
+            var vals = findall(meas[i], 'VALUE');
+            for (var j = 0; j < vals.length; j++) {
+                faults.push([(vals[j].text || '').trim(),
+                             (vals[j].attrib.TEXT || '').trim()]);
+            }
+        }
+        return faults;
+    }
+
+    function overviewTable(sections, secIds) {
+        var out = ['<table class="grid"><tr>'
+            + '<th>Control unit</th><th>Part number</th>'
+            + '<th>Serial number</th>'
+            + '<th>DSN</th><th>Software</th><th>Hardware</th>'
+            + '<th>Fault codes</th></tr>'];
+        for (var i = 0; i < sections.length; i++) {
+            var sec = sections[i], sid = secIds[i];
+            var title = ecuDisplay(sec);
+            var sw = identValue(sec, 'PIF') || identValue(sec, 'ZIF');
+            var faults = faultValues(sec);
+            var fparts = [];
+            for (var f = 0; f < faults.length; f++) {
+                fparts.push('<span title="'
+                    + esc(translateLabel(faults[f][1])) + '">'
+                    + esc(faults[f][0]) + '</span>');
+            }
+            var fcell = fparts.length ? fparts.join(', ') : '&mdash;';
+            var cls = faults.length ? ' class="frow hasfault"'
+                                    : ' class="frow"';
+            out.push('<tr' + cls + '><td><a href="#' + sid + '">' + title
+                + '</a></td>'
+                + '<td>' + identValue(sec, 'SGIDK2') + '</td><td>'
+                + identValue(sec, 'SERNR') + '</td><td>'
+                + identValue(sec, 'SGIDK1') + '</td><td>' + sw
+                + '</td><td>' + identValue(sec, 'BRIF') + '</td>'
+                + '<td>' + fcell + '</td></tr>');
+        }
+        out.push('</table>');
+        return out.join('\n');
+    }
+
+    function renderMeasValues(meas) {
+        var rows = [];
+        var vals = findall(meas, 'VALUE');
+        for (var i = 0; i < vals.length; i++) {
+            rows.push('<tr class="frow"><td class="lbl">'
+                + labelHtml(vals[i].attrib.TEXT || null)
+                + '</td><td class="val">' + valueCell(vals[i])
+                + '</td></tr>');
+        }
+        if (!rows.length) return '';
+        return '<table class="vals">' + rows.join('') + '</table>';
+    }
+
+    function measHeading(meas) {
+        var obj = meas.attrib.OBJECT || '';
+        var title = D.MEAS_OBJECT_TITLES[obj];
+        if (title === undefined) {
+            title = esc(findtext(meas, 'TITLE')) || esc(obj);
+        }
+        var native = esc(findtext(meas, 'TITLE'));
+        if (native && native.toLowerCase() !== title.toLowerCase()) {
+            return title
+                + " <span style='color:#999;font-weight:normal'>("
+                + native + ')</span>';
+        }
+        return title;
+    }
+
+    function renderFaultMeas(meas) {
+        var out = [];
+        var nested = findall(meas, 'MEAS');
+        var vals = findall(meas, 'VALUE');
+        for (var i = 0; i < vals.length; i++) {
+            out.push('<div class="faultitem">');
+            out.push('<span class="fcode">' + esc(vals[i].text) + '</span>'
+                + labelHtml(vals[i].attrib.TEXT || null));
+            for (var s = 0; s < nested.length; s++) {
+                var body = renderMeasValues(nested[s]);
+                if (body) {
+                    out.push('<div class="subtable"><h3 class="meas">'
+                        + measHeading(nested[s]) + '</h3>' + body
+                        + '</div>');
+                }
+            }
+            out.push('</div>');
+        }
+        if (!vals.length) {
+            for (var s2 = 0; s2 < nested.length; s2++) {
+                var body2 = renderMeasValues(nested[s2]);
+                if (body2) {
+                    out.push('<div class="subtable"><h3 class="meas">'
+                        + measHeading(nested[s2]) + '</h3>' + body2
+                        + '</div>');
+                }
+            }
+        }
+        return out.join('\n');
+    }
+
+    function codingTable(sections, secIds) {
+        var out = ['<h2 class="sect" id="coding">Coding overview</h2>'];
+        var haveAny = false;
+        for (var i = 0; i < sections.length; i++) {
+            var sec = sections[i], sid = secIds[i];
+            var rows = [];
+            var meas = findall(sec, "MEAS[@OBJECT='Codierung']");
+            for (var m = 0; m < meas.length; m++) {
+                var vals = findall(meas[m], 'VALUE');
+                for (var v = 0; v < vals.length; v++) {
+                    rows.push('<tr class="frow"><td class="lbl">'
+                        + labelHtml(vals[v].attrib.TEXT || null)
+                        + '</td><td class="val">' + valueCell(vals[v])
+                        + '</td></tr>');
+                }
+            }
+            if (!rows.length) continue;
+            haveAny = true;
+            out.push('<details class="ecu" id="cod-' + i + '">'
+                + '<summary>' + ecuDisplay(sec)
+                + ' <span class="badge count">' + rows.length
+                + ' codings</span>'
+                + '<a style="margin-left:auto;font-weight:normal;'
+                + 'font-size:12px" href="#' + sid
+                + '">control unit details</a></summary>'
+                + '<div class="body"><table class="vals">' + rows.join('')
+                + '</table></div></details>');
+        }
+        if (!haveAny) return '';
+        return out.join('\n');
+    }
+
+    function faultsSection(sections, secIds, nfaults) {
+        var items = [];
+        for (var i = 0; i < sections.length; i++) {
+            var sec = sections[i], sid = secIds[i];
+            var fmeas = [];
+            var all = findall(sec, "MEAS[@OBJECT='Fehler']");
+            for (var m = 0; m < all.length; m++) {
+                if (findall(all[m], 'VALUE').length
+                        || findall(all[m], 'MEAS').length) {
+                    fmeas.push(all[m]);
+                }
+            }
+            if (!fmeas.length) continue;
+            var body = fmeas.map(renderFaultMeas).join('');
+            items.push('<div class="fltecu" id="flt-' + sid + '">'
+                + '<h3 class="meas"><a href="#' + sid + '">'
+                + ecuDisplay(sec) + '</a></h3>' + body + '</div>');
+        }
+        if (!items.length) return '';
+        return '<details class="ecu" id="faults" open>'
+            + '<summary>Faults '
+            + '<span class="badge fault">' + nfaults + ' fault'
+            + (nfaults === 1 ? '' : 's') + '</span></summary>'
+            + '<div class="body">' + items.join('') + '</div></details>';
+    }
+
+    function ecuSection(sec, sid) {
+        var raw = (findtext(sec, 'TITLE') || '').trim();
+        var gloss = D.ECU_GLOSS[normDe(raw)];
+        var title;
+        if (gloss) {
+            title = esc(gloss.charAt(0).toUpperCase() + gloss.slice(1))
+                + ' <span class="gloss">' + esc(raw) + '</span>';
+        } else {
+            title = esc(raw);
+        }
+        var faults = faultValues(sec);
+        var nvals = findall(sec, './/VALUE').length;
+        var badge = '';
+        if (faults.length) {
+            badge = '<a class="fl" href="#flt-' + sid
+                + '" title="show only the fault entries">'
+                + '<span class="badge fault">' + faults.length + ' fault'
+                + (faults.length === 1 ? '' : 's') + '</span></a>';
+        }
+        var openAttr = faults.length ? ' open' : '';
+        var out = ['<details class="ecu" id="' + sid + '"' + openAttr + '>',
+            '<summary>' + title + ' ' + badge
+            + '<span class="badge count">' + nvals + ' values</span>'
+            + '<a style="margin-left:auto;font-weight:normal;font-size:12px"'
+            + ' href="#overview">back to top</a></summary>',
+            '<div class="body">'];
+        var meas = findall(sec, 'MEAS');
+        for (var m = 0; m < meas.length; m++) {
+            var obj = meas[m].attrib.OBJECT || '';
+            var body;
+            if (obj === 'Fehler') {
+                body = renderFaultMeas(meas[m]);
+            } else {
+                body = renderMeasValues(meas[m]);
+            }
+            if (body) {
+                out.push('<h3 class="meas">' + measHeading(meas[m])
+                    + '</h3>' + body);
+            }
+        }
+        out.push('</div></details>');
+        return out.join('\n');
+    }
+
+    function two(n) { return n < 10 ? '0' + n : String(n); }
+
+    PIWIS.render = function (root, sourceDesc) {
+        LABEL_CACHE = {};
+        VALUE_CACHE = {};
+        var res = find(root, 'RESULT');
+        var title = res !== null ? esc(findtext(res, 'TITLE'))
+                                 : 'Vehicle analysis log';
+        var vin = esc(findtext(root, 'RESULTSHEADER/VEHICLE/IDENT/VIN'));
+        var created = esc(findtext(root, 'RESULT/HEADER/END_TEST'));
+        var sections = res !== null
+            ? findall(res, "SECTION[@OBJECT='ECU']") : [];
+        var secIds = [];
+        for (var i = 0; i < sections.length; i++) secIds.push('ecu-' + i);
+        var nfaults = 0;
+        for (var f = 0; f < sections.length; f++) {
+            nfaults += faultValues(sections[f]).length;
+        }
+
+        var parts = [];
+        parts.push('<!DOCTYPE html>');
+        parts.push('<html lang="en"><head><meta charset="utf-8">');
+        parts.push('<title>' + title + ' - ' + vin + '</title>');
+        parts.push('<style>' + D.CSS + '</style>');
+        parts.push('<script>' + D.JS + '<\/script>');
+        parts.push('</head><body>');
+        var nav = '<a href="#overview">Overview</a>'
+            + (nfaults ? '<a href="#faults">Faults</a>' : '')
+            + '<a href="#coding">Coding</a>'
+            + '<a href="#ecus">Control units</a>'
+            + '<a href="#" title="filter for Nmax over-rev ranges '
+            + '(supported vehicles only)" '
+            + 'onclick="return presetFilter(\'Nmax\')">Overrevs</a>';
+        parts.push('<div class="topbar"><h1>' + title + '</h1>'
+            + '<span class="vin">' + vin + ' &middot; ' + created
+            + '</span>'
+            + '<div class="navlinks">' + nav + '</div>'
+            + '<input id="filterbox" type="search" '
+            + 'placeholder="Filter rows (label, value, fault code)..." '
+            + 'oninput="onFilterInput()">'
+            + '<span id="filtercount"></span>'
+            + '<button onclick="setAll(true)">Expand all</button>'
+            + '<button onclick="setAll(false)">Collapse all</button></div>');
+        parts.push('<div class="wrap">');
+        parts.push(headerCards(root));
+        parts.push('<h2 class="sect" id="overview">Overview</h2>');
+        if (nfaults) {
+            parts.push(faultsSection(sections, secIds, nfaults));
+        }
+        parts.push(overviewTable(sections, secIds));
+        var coding = codingTable(sections, secIds);
+        if (coding) parts.push(coding);
+        parts.push('<h2 class="sect" id="ecus">Control units '
+            + '<span class="badge count">' + sections.length
+            + ' ECUs</span></h2>');
+        for (var s = 0; s < sections.length; s++) {
+            parts.push(ecuSection(sections[s], secIds[s]));
+        }
+        var now = new Date();
+        var stamp = now.getFullYear() + '-' + two(now.getMonth() + 1)
+            + '-' + two(now.getDate()) + ' ' + two(now.getHours())
+            + ':' + two(now.getMinutes()) + ':' + two(now.getSeconds());
+        parts.push('<div class="footer">Generated by ' + D.APP_NAME
+            + ' from ' + esc(sourceDesc) + ' on ' + stamp
+            + '<br>German labels and values are translated to English '
+            + 'where known; hover a translated item to see the '
+            + 'original text.</div>');
+        parts.push('</div></body></html>');
+        return parts.join('\n');
+    };
+
+    // mirror of Python's ascii + xmlcharrefreplace output encoding
+    PIWIS.toAscii = function (s) {
+        var out = [];
+        for (var i = 0; i < s.length; i++) {
+            var cp = s.codePointAt(i);
+            if (cp > 0xFFFF) i++;  // surrogate pair consumed
+            if (cp < 128) out.push(String.fromCodePoint(cp));
+            else out.push('&#' + cp + ';');
+        }
+        return out.join('');
+    };
+
+    PIWIS.init = function (data) {
+        D = data;
+        TRANSLIT = {};
+        for (var k in D.TRANSLIT) TRANSLIT[Number(k)] = D.TRANSLIT[k];
+        PHRASE_RE = buildPhraseRe();
+        STEMS = buildStems();
+        LABEL_CACHE = {};
+        VALUE_CACHE = {};
+    };
+
+    PIWIS.translateLabel = function (t) { return translateLabel(t); };
+    PIWIS.translateValue = function (t) { return translateValue(t); };
+    PIWIS.normDe = function (t) { return normDe(t); };
+
+    global.PIWIS = PIWIS;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script>
+<script>
+'use strict';
+(function () {
+    PIWIS.init(PDATA);
+
+    var statusEl = document.getElementById('status');
+    var resultEl = document.getElementById('result');
+    var previewEl = document.getElementById('preview');
+    var dropEl = document.getElementById('drop');
+    var fileEl = document.getElementById('file');
+    var blobUrl = null;
+    var reportName = 'piwis_val_report.html';
+
+    function setStatus(msg, isErr) {
+        statusEl.textContent = msg;
+        statusEl.className = isErr ? 'err' : '';
+    }
+
+    // ---------- minimal zip reader (stored + deflate entries) ----------
+
+    function findEocd(dv) {
+        var len = dv.byteLength;
+        var max = Math.min(len - 22, 65557);
+        for (var back = 0; back <= max; back++) {
+            var p = len - 22 - back;
+            if (p < 0) break;
+            if (dv.getUint32(p, true) === 0x06054b50) return p;
+        }
+        return -1;
+    }
+
+    function listEntries(buf) {
+        var dv = new DataView(buf);
+        var eocd = findEocd(dv);
+        if (eocd < 0) throw new Error('Not a zip file (no directory found)');
+        var count = dv.getUint16(eocd + 10, true);
+        var cdOff = dv.getUint32(eocd + 16, true);
+        var dec = new TextDecoder('utf-8');
+        var entries = [];
+        var p = cdOff;
+        for (var i = 0; i < count; i++) {
+            if (dv.getUint32(p, true) !== 0x02014b50) {
+                throw new Error('Corrupt zip central directory');
+            }
+            var method = dv.getUint16(p + 10, true);
+            var compSize = dv.getUint32(p + 20, true);
+            var uncompSize = dv.getUint32(p + 24, true);
+            var nameLen = dv.getUint16(p + 28, true);
+            var extraLen = dv.getUint16(p + 30, true);
+            var commentLen = dv.getUint16(p + 32, true);
+            var localOff = dv.getUint32(p + 42, true);
+            var name = dec.decode(new Uint8Array(buf, p + 46, nameLen));
+            entries.push({ name: name, method: method,
+                           compSize: compSize, uncompSize: uncompSize,
+                           localOff: localOff });
+            p += 46 + nameLen + extraLen + commentLen;
+        }
+        return entries;
+    }
+
+    function extractEntry(buf, entry) {
+        var dv = new DataView(buf);
+        var p = entry.localOff;
+        if (dv.getUint32(p, true) !== 0x04034b50) {
+            return Promise.reject(new Error('Corrupt zip local header'));
+        }
+        var nameLen = dv.getUint16(p + 26, true);
+        var extraLen = dv.getUint16(p + 28, true);
+        var start = p + 30 + nameLen + extraLen;
+        var slice = buf.slice(start, start + entry.compSize);
+        if (entry.method === 0) {
+            return Promise.resolve(slice);
+        }
+        if (entry.method !== 8) {
+            return Promise.reject(new Error(
+                'Unsupported zip compression method ' + entry.method));
+        }
+        var ds = new DecompressionStream('deflate-raw');
+        var stream = new Blob([slice]).stream().pipeThrough(ds);
+        return new Response(stream).arrayBuffer();
+    }
+
+    // ---------- log loading (mirrors load_log in the Python) ----------
+
+    function baseName(p) {
+        return p.split('/').pop().split('\\').pop();
+    }
+
+    function pickXmlEntry(entries) {
+        var xml = entries.filter(function (e) {
+            return e.name.toLowerCase().slice(-4) === '.xml';
+        });
+        if (!xml.length) {
+            throw new Error('No .xml member found in the zipfile');
+        }
+        var fap = xml.filter(function (e) {
+            return baseName(e.name).toUpperCase().slice(0, 4) === 'FAP_';
+        });
+        if (fap.length) return fap[0];
+        xml.sort(function (a, b) { return b.uncompSize - a.uncompSize; });
+        return xml[0];
+    }
+
+    function domToTree(el) {
+        var node = { tag: el.tagName, attrib: {}, text: null,
+                     children: [] };
+        for (var a = 0; a < el.attributes.length; a++) {
+            node.attrib[el.attributes[a].name] = el.attributes[a].value;
+        }
+        var textParts = [];
+        var seenElem = false;
+        for (var c = el.firstChild; c; c = c.nextSibling) {
+            if (c.nodeType === 1) {
+                seenElem = true;
+                node.children.push(domToTree(c));
+            } else if ((c.nodeType === 3 || c.nodeType === 4)
+                       && !seenElem) {
+                textParts.push(c.nodeValue);
+            }
+        }
+        node.text = textParts.length ? textParts.join('') : null;
+        return node;
+    }
+
+    function parseXmlBytes(buf, sourceDesc) {
+        var text = new TextDecoder('utf-8').decode(buf);
+        var doc = new DOMParser().parseFromString(text, 'text/xml');
+        if (doc.getElementsByTagName('parsererror').length) {
+            throw new Error('Could not parse the XML log');
+        }
+        var root = doc.documentElement;
+        if (root.tagName !== 'RESULTS') {
+            throw new Error('Unexpected XML root element <' + root.tagName
+                + '>; expected <RESULTS> (PIWIS vehicle analysis log)');
+        }
+        return { tree: domToTree(root), sourceDesc: sourceDesc };
+    }
+
+    function processFile(file) {
+        setStatus('Reading ' + file.name + ' ...', false);
+        resultEl.style.display = 'none';
+        var lower = file.name.toLowerCase();
+        file.arrayBuffer().then(function (buf) {
+            if (lower.slice(-4) === '.xml') {
+                return parseXmlBytes(buf, file.name);
+            }
+            var entries = listEntries(buf);
+            var entry = pickXmlEntry(entries);
+            return extractEntry(buf, entry).then(function (xbuf) {
+                return parseXmlBytes(xbuf,
+                    file.name + ' :: ' + entry.name);
+            });
+        }).then(function (r) {
+            setStatus('Rendering report ...', false);
+            // let the status paint before the heavy work
+            return new Promise(function (resolve) {
+                setTimeout(function () { resolve(r); }, 20);
+            });
+        }).then(function (r) {
+            var html = PIWIS.toAscii(PIWIS.render(r.tree, r.sourceDesc));
+            if (blobUrl) URL.revokeObjectURL(blobUrl);
+            blobUrl = URL.createObjectURL(
+                new Blob([html], { type: 'text/html' }));
+            reportName = baseName(file.name)
+                .replace(/\.(zip|xml)$/i, '') + '_report.html';
+            previewEl.src = blobUrl;
+            resultEl.style.display = 'block';
+            setStatus('Done. The report is shown below.', false);
+        }).catch(function (err) {
+            setStatus('Error: ' + err.message, true);
+        });
+    }
+
+    document.getElementById('openbtn').addEventListener('click',
+        function () { if (blobUrl) window.open(blobUrl, '_blank'); });
+    document.getElementById('dlbtn').addEventListener('click',
+        function () {
+            if (!blobUrl) return;
+            var a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = reportName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+
+    dropEl.addEventListener('click', function () { fileEl.click(); });
+    fileEl.addEventListener('change', function () {
+        if (fileEl.files.length) processFile(fileEl.files[0]);
+    });
+    dropEl.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dropEl.classList.add('hover');
+    });
+    dropEl.addEventListener('dragleave', function () {
+        dropEl.classList.remove('hover');
+    });
+    dropEl.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dropEl.classList.remove('hover');
+        if (e.dataTransfer.files.length) {
+            processFile(e.dataTransfer.files[0]);
+        }
+    });
+})();
+</script>
+</body>
+</html>
