@@ -8,6 +8,7 @@
 # local working notes
 prompt*.txt
 README.txt
+Devel_history.txt
 
 # build trees
 build_env/
