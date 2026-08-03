@@ -1,0 +1,17 @@
+# vehicle logs (contain VINs and diagnostic data) - never publish
+*.zip
+*.xml
+
+# Porsche PIWIS stylesheets (proprietary) - never publish
+*.xsl
+
+# local working notes
+prompt*.txt
+README.txt
+
+# build trees
+build_env/
+build/
+dist/
+__pycache__/
+*.pyc
